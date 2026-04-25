@@ -7,17 +7,24 @@ import {
   Patch,
   Post,
   Query,
+  Req,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import type { Request } from 'express';
 
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { Public } from '@/common/decorators/public.decorator';
 import type { RequestUser } from '@/common/types/request-user';
 
+import { CompleteService, type CompleteResult } from './complete.service';
 import {
   PatchOnboardingStateDto,
   StartOnboardingSessionDto,
 } from './dto/onboarding-state.dto';
+import {
+  GeoResolverService,
+  type GeoResolveResult,
+} from './geo-resolver.service';
 import {
   JourneyConfigService,
   type JourneyConfigPayload,
@@ -31,7 +38,28 @@ export class OnboardingController {
   constructor(
     private readonly state: OnboardingStateService,
     private readonly config: JourneyConfigService,
+    private readonly geo: GeoResolverService,
+    private readonly completer: CompleteService,
   ) {}
+
+  /**
+   * E2 — IP→country resolver (D-006 + D-012). Public; called pre-auth on
+   * Welcome screen mount so Phase 2 can pre-fill the country card.
+   */
+  @Post('region/resolve')
+  @Public()
+  @ApiOperation({
+    summary:
+      'Resolve client IP to country/currency/dial-code. MaxMind (prod) or ipinfo (dev).',
+  })
+  async resolveRegion(@Req() req: Request): Promise<GeoResolveResult> {
+    const ip =
+      (req.headers['cf-connecting-ip'] as string | undefined) ??
+      (req.headers['x-forwarded-for'] as string | undefined)?.split(',')[0].trim() ??
+      req.socket.remoteAddress ??
+      '';
+    return this.geo.resolve(ip);
+  }
 
   /**
    * E9 — DB-driven content payload (D-029). Public — no auth needed for
@@ -99,5 +127,23 @@ export class OnboardingController {
       }
       throw err;
     }
+  }
+
+  /**
+   * E7 — Phase 7 personalization orchestrator (FR-7.0.1..7.0.8 / D-025).
+   *
+   * Idempotent. Fan-outs onboarding_state into profiles/budgets/goals/
+   * accounts/corridors/dashboard_widgets in a single transaction and
+   * fires the `onboarding_completed` analytics event (D-030).
+   */
+  @Post('complete')
+  @ApiOperation({
+    summary:
+      'Phase 7 orchestrator: fan-out onboarding_state into product tables.',
+  })
+  async complete(
+    @CurrentUser() user: RequestUser,
+  ): Promise<CompleteResult> {
+    return this.completer.complete(user.id);
   }
 }
