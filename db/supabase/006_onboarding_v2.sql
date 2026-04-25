@@ -1,0 +1,44 @@
+-- 006_onboarding_v2.sql
+--
+-- 🟡 Stage 0 stub. Schema lands at Stage 4 (see /docs/04-system-design/).
+--
+-- All additive: new tables only, no rewrites of profiles/accounts/budgets/etc.
+-- Idempotent via IF NOT EXISTS.
+--
+-- Tables planned:
+--
+--   reference (seeded at end of file):
+--     regions               (iso2 PK, name, currency, dial_code, default_locale)
+--     banks                 (id, region_iso2, name, slug, logo_url)
+--     wallets               (id, region_iso2, name, slug, logo_url)
+--     goal_templates        (id, slug, label, default_target_minor, icon_key)
+--
+--   per-user state (RLS scoped to auth.uid()):
+--     onboarding_sessions   (id, user_id, started_at, completed_at,
+--                            current_phase, current_step, last_activity_at,
+--                            abandoned_at, abandoned_step, payload jsonb)
+--     onboarding_state      (user_id PK, session_id, primary_region,
+--                            secondary_regions text[], name, ...)
+--     permissions           (user_id, sms, notifications, location, contacts,
+--                            granted_at)
+--     earning_types         (user_id, type, custom_value)
+--     user_accounts         (user_id, account_kind, provider_slug,
+--                            region_iso2, nickname)
+--     user_investments      (user_id, investment_type, custom_value)
+--     remittance_preferences (user_id, sends_to text[], receives_from text[])
+--     phone_otp_challenges  (id, phone_e164, code_hash, expires_at,
+--                            attempts, used_at, provider_name)
+--
+--   analytics (RLS allows insert from auth.uid(), select admin-only):
+--     funnel_sessions       (id, user_id, started_at, completed_at,
+--                            last_step_reached, abandoned_at, abandoned_step)
+--     events                (id, user_id, session_id, event_name,
+--                            properties jsonb, frd_id, step_id, phase,
+--                            occurred_at)
+--
+-- The decision to put `events` + `funnel_sessions` in Postgres (not e.g.
+-- Mixpanel) keeps everything queryable via Supabase SQL — funnel queries
+-- can join freely with profile state. Volume budget: ~30 events/user *
+-- ~10k users in y1 = 300k rows. Cheap.
+
+-- Stage 0 leaves this file empty intentionally. Stage 4 fills it.
