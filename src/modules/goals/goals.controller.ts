@@ -42,13 +42,22 @@ export class GoalsController {
   }
 
   @Post(':id/contributions')
-  @ApiOperation({ summary: 'Add a contribution to a goal' })
+  @ApiOperation({
+    summary:
+      'Add a contribution. Response includes milestones[] crossed (25/50/75/100) for confetti UX.',
+  })
   contribute(
     @CurrentUser() user: RequestUser,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ContributeGoalDto,
   ) {
     return this.svc.contribute(user.id, id, dto);
+  }
+
+  @Get(':id/streak')
+  @ApiOperation({ summary: 'Weekly contribution streak (consecutive weeks)' })
+  streak(@CurrentUser() user: RequestUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.svc.streak(user.id, id);
   }
 
   @Delete(':id')

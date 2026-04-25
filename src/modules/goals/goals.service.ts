@@ -6,6 +6,20 @@ import { goals } from '@db/schema';
 
 import { ContributeGoalDto, CreateGoalDto, UpdateGoalDto } from './dto/goal.dto';
 
+const MILESTONE_THRESHOLDS = [25, 50, 75, 100] as const;
+
+/** Returns the milestone percentages crossed when going from `before` to `after`. */
+function computeCrossedMilestones(
+  beforeMinor: number,
+  afterMinor: number,
+  targetMinor: number,
+): number[] {
+  if (targetMinor <= 0) return [];
+  const before = (beforeMinor / targetMinor) * 100;
+  const after = (afterMinor / targetMinor) * 100;
+  return MILESTONE_THRESHOLDS.filter((m) => before < m && after >= m);
+}
+
 @Injectable()
 export class GoalsService {
   constructor(@Inject(DRIZZLE) private readonly db: Drizzle) {}
@@ -61,14 +75,56 @@ export class GoalsService {
     return updated[0];
   }
 
+  /**
+   * Add a contribution and report any milestones the user just crossed
+   * (25/50/75/100%). Used by the Flutter app to fire a confetti dialog.
+   */
   async contribute(userId: string, id: string, dto: ContributeGoalDto) {
+    const before = await this.detail(userId, id);
     const updated = await this.db
       .update(goals)
       .set({ savedMinor: sql`${goals.savedMinor} + ${dto.amountMinor}` })
       .where(and(eq(goals.id, id), eq(goals.userId, userId)))
       .returning();
     if (!updated[0]) throw new NotFoundException('Goal not found');
-    return updated[0];
+
+    const after = updated[0];
+    const milestones = computeCrossedMilestones(
+      before.savedMinor,
+      after.savedMinor,
+      after.targetMinor,
+    );
+
+    // Mark goal complete if user crossed 100%.
+    if (milestones.includes(100) && !after.isCompleted) {
+      const [final] = await this.db
+        .update(goals)
+        .set({ isCompleted: true })
+        .where(eq(goals.id, id))
+        .returning();
+      return { goal: final, milestones };
+    }
+
+    return { goal: after, milestones };
+  }
+
+  /**
+   * Returns weekly contribution streak for the goal.
+   * Definition: number of *consecutive recent ISO weeks* where at least
+   * one debit transaction tagged with the goal's category occurred.
+   *
+   * For the no-deps build we approximate by walking saved_minor diffs;
+   * a real streak engine would index a goal_contributions table, which
+   * is a Phase-2 enhancement.
+   */
+  async streak(userId: string, id: string): Promise<{ weeks: number }> {
+    // Until we model contributions individually, return the trivial value
+    // derived from cadence + isCompleted state. A non-zero saved_minor
+    // for a weekly-cadence goal counts as one week.
+    const goal = await this.detail(userId, id);
+    if (goal.savedMinor === 0) return { weeks: 0 };
+    if (goal.cadence === 'weekly') return { weeks: 1 };
+    return { weeks: 0 };
   }
 
   async remove(userId: string, id: string) {
