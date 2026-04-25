@@ -61,4 +61,57 @@ export class RecurringBillsService {
     if (!removed[0]) throw new NotFoundException('Recurring bill not found');
     return { ok: true };
   }
+
+  /**
+   * Record a payment for the current period by advancing `nextExpected`
+   * to the next frequency anchor. Stateless approach — no payment-history
+   * audit log (a follow-up can add `bill_payments` if needed).
+   *
+   * If `nextExpected` was null, it stays null (caller didn't pin a
+   * schedule). The list/detail responses still reflect the bill is
+   * configured.
+   */
+  async markPaid(userId: string, id: string) {
+    const existing = await this.db.query.recurringBills.findFirst({
+      where: and(eq(recurringBills.id, id), eq(recurringBills.userId, userId)),
+    });
+    if (!existing) throw new NotFoundException('Recurring bill not found');
+
+    const nextExpected = existing.nextExpected
+      ? this._advance(existing.nextExpected, existing.frequency)
+      : null;
+
+    const [updated] = await this.db
+      .update(recurringBills)
+      .set({ nextExpected })
+      .where(and(eq(recurringBills.id, id), eq(recurringBills.userId, userId)))
+      .returning();
+    return updated;
+  }
+
+  /**
+   * Advance an ISO yyyy-mm-dd date string by one frequency interval.
+   * Pure function — exported via the class for ease of testing later.
+   */
+  private _advance(
+    isoDate: string,
+    frequency: 'weekly' | 'monthly' | 'quarterly' | 'yearly',
+  ): string {
+    const d = new Date(`${isoDate}T00:00:00Z`);
+    switch (frequency) {
+      case 'weekly':
+        d.setUTCDate(d.getUTCDate() + 7);
+        break;
+      case 'monthly':
+        d.setUTCMonth(d.getUTCMonth() + 1);
+        break;
+      case 'quarterly':
+        d.setUTCMonth(d.getUTCMonth() + 3);
+        break;
+      case 'yearly':
+        d.setUTCFullYear(d.getUTCFullYear() + 1);
+        break;
+    }
+    return d.toISOString().slice(0, 10); // back to yyyy-mm-dd
+  }
 }

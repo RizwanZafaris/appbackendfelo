@@ -24,9 +24,14 @@ export class AccountsService {
       .values({
         userId,
         provider: dto.provider,
+        type: dto.type ?? null,
         displayName: dto.displayName ?? null,
         currency: dto.currency.toUpperCase(),
         balanceMinor: dto.balanceMinor ?? null,
+        // syncStatus has a column default of 'synced' — only override
+        // when the caller explicitly asks (e.g. fresh OAuth flow still
+        // syncing in the background).
+        ...(dto.syncStatus ? { syncStatus: dto.syncStatus } : {}),
       })
       .returning();
     return inserted[0];
@@ -37,9 +42,11 @@ export class AccountsService {
       .update(accounts)
       .set({
         provider: dto.provider,
+        type: dto.type,
         displayName: dto.displayName,
         currency: dto.currency?.toUpperCase(),
         balanceMinor: dto.balanceMinor,
+        syncStatus: dto.syncStatus,
         isArchived: dto.isArchived,
       })
       .where(and(eq(accounts.id, id), eq(accounts.userId, userId)))
