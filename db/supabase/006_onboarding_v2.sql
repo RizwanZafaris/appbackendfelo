@@ -4,8 +4,13 @@
 -- (`docs/04-system-design/system-design.md` in appuifelo).
 --
 -- All additive: new tables only, no rewrites of existing tables (extends
--- `goals` + `budget_categories` with new optional columns only).
+-- `goals` + `budgets` with new optional columns only).
 -- Idempotent via IF NOT EXISTS / ON CONFLICT.
+--
+-- NOTE on budget shape: the live schema uses one row per (user, category)
+-- in `public.budgets` — there is NO separate `budget_categories` table.
+-- Each onboarding-collected category becomes its own `budgets` row.
+-- D-020's bidirectional semantic flag lives on `budgets.semantic`.
 
 -- =========================================================================
 -- 3.1 Reference tables (DB-driven content per D-029)
@@ -409,7 +414,10 @@ ALTER TABLE public.goals
 CREATE UNIQUE INDEX IF NOT EXISTS uq_goals_slot
   ON public.goals(user_id, slot) WHERE slot IS NOT NULL;
 
-ALTER TABLE public.budget_categories
+-- Per "NOTE on budget shape" in this file's header: live schema has no
+-- budget_categories table — `budgets` is the per-category row. Add the
+-- D-020 bidirectional semantic flag there.
+ALTER TABLE public.budgets
   ADD COLUMN IF NOT EXISTS semantic TEXT NOT NULL DEFAULT 'outflow'
     CHECK (semantic IN ('inflow','outflow'));
 
