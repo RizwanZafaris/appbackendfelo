@@ -40,7 +40,10 @@ export class InvestmentsService {
     let totalMarketMinor = 0;
     let anyMissingPrice = false;
 
-    const byClass = new Map<string, { costMinor: number; marketMinor: number }>();
+    const byClass = new Map<
+      string,
+      { costMinor: number; marketMinor: number; pricedMarketMinor: number }
+    >();
 
     for (const r of rows) {
       const cost = r.costBasisMinor;
@@ -52,17 +55,26 @@ export class InvestmentsService {
       } else {
         totalMarketMinor += market;
       }
-      const slot = byClass.get(r.assetClass) ?? { costMinor: 0, marketMinor: 0 };
+      const slot = byClass.get(r.assetClass) ?? {
+        costMinor: 0,
+        marketMinor: 0, // includes cost-fallback for unpriced rows (UI display)
+        pricedMarketMinor: 0, // priced-only, used for weight calc
+      };
       slot.costMinor += cost;
       slot.marketMinor += market ?? cost;
+      if (market != null) slot.pricedMarketMinor += market;
       byClass.set(r.assetClass, slot);
     }
 
+    // Weights are computed from PRICED market values only — so allocations
+    // sum to 1.0 even when some holdings lack a price. UI can still render
+    // the unpriced classes by showing `marketMinor` (cost-fallback) without
+    // pretending we know their weight in the portfolio.
     const allocations = Array.from(byClass.entries()).map(([assetClass, v]) => ({
       assetClass,
       costMinor: v.costMinor,
       marketMinor: v.marketMinor,
-      weight: totalMarketMinor === 0 ? 0 : v.marketMinor / totalMarketMinor,
+      weight: totalMarketMinor === 0 ? 0 : v.pricedMarketMinor / totalMarketMinor,
     }));
 
     return {
@@ -70,6 +82,7 @@ export class InvestmentsService {
       totalCostMinor,
       totalMarketMinor: anyMissingPrice ? null : totalMarketMinor,
       totalPnLMinor: anyMissingPrice ? null : totalMarketMinor - totalCostMinor,
+      anyMissingPrice,
       allocations,
     };
   }

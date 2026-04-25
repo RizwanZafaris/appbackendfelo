@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { and, count, desc, eq, sum } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 
 import { Drizzle, DRIZZLE } from '@/common/db/db.module';
 import { splitParticipants, splits } from '@db/schema';
@@ -10,6 +10,11 @@ import { CreateSplitDto, ParticipantInputDto, UpdateSplitDto } from './dto/split
 export class SplitsService {
   constructor(@Inject(DRIZZLE) private readonly db: Drizzle) {}
 
+  /**
+   * List the user's splits with participant counts.
+   * Counts are computed in a single tenant-scoped GROUP BY query —
+   * never aggregates across other users.
+   */
   async list(userId: string) {
     const rows = await this.db
       .select()
@@ -17,20 +22,28 @@ export class SplitsService {
       .where(eq(splits.ownerUserId, userId))
       .orderBy(desc(splits.createdAt));
 
-    // Attach participant counts in a single query
+    if (rows.length === 0) return [];
+
+    const ids = rows.map((r) => r.id);
     const counts = await this.db
       .select({
         splitId: splitParticipants.splitId,
-        total: count(),
-        paid: sum(
-          // count only paid rows
-          // drizzle doesn't have a `case` helper here, so do two passes
-          splitParticipants.id,
-        ),
+        total: sql<number>`COUNT(*)::int`,
+        paid: sql<number>`SUM(CASE WHEN ${splitParticipants.paid} THEN 1 ELSE 0 END)::int`,
       })
-      .from(splitParticipants);
-    const cIdx = new Map(counts.map((c) => [c.splitId, c.total]));
-    return rows.map((r) => ({ ...r, participantCount: cIdx.get(r.id) ?? 0 }));
+      .from(splitParticipants)
+      .where(inArray(splitParticipants.splitId, ids))
+      .groupBy(splitParticipants.splitId);
+
+    const map = new Map(counts.map((c) => [c.splitId, c]));
+    return rows.map((r) => {
+      const c = map.get(r.id);
+      return {
+        ...r,
+        participantCount: c ? Number(c.total) : 0,
+        paidCount: c ? Number(c.paid) : 0,
+      };
+    });
   }
 
   async detail(userId: string, id: string) {
@@ -84,23 +97,45 @@ export class SplitsService {
     });
   }
 
+  /**
+   * Add a participant. Validates that the new participant's share does
+   * not push the share-sum over the split's totalMinor invariant.
+   */
   async addParticipant(userId: string, splitId: string, p: ParticipantInputDto) {
-    // Check ownership
-    const split = await this.db.query.splits.findFirst({
-      where: and(eq(splits.id, splitId), eq(splits.ownerUserId, userId)),
-    });
-    if (!split) throw new NotFoundException('Split not found');
+    return this.db.transaction(async (tx) => {
+      const [split] = await tx
+        .select()
+        .from(splits)
+        .where(and(eq(splits.id, splitId), eq(splits.ownerUserId, userId)))
+        .limit(1);
+      if (!split) throw new NotFoundException('Split not found');
 
-    const [inserted] = await this.db
-      .insert(splitParticipants)
-      .values({
-        splitId,
-        userId: p.userId ?? null,
-        displayName: p.displayName,
-        shareMinor: p.shareMinor,
-      })
-      .returning();
-    return inserted;
+      const sumRow = await tx
+        .select({
+          total: sql<number>`COALESCE(SUM(${splitParticipants.shareMinor}), 0)::bigint`,
+        })
+        .from(splitParticipants)
+        .where(eq(splitParticipants.splitId, splitId));
+      const currentSum = Number(sumRow[0]?.total ?? 0);
+
+      if (currentSum + p.shareMinor > split.totalMinor) {
+        throw new BadRequestException(
+          `Adding share ${p.shareMinor} would exceed total ${split.totalMinor} ` +
+            `(current sum ${currentSum})`,
+        );
+      }
+
+      const [inserted] = await tx
+        .insert(splitParticipants)
+        .values({
+          splitId,
+          userId: p.userId ?? null,
+          displayName: p.displayName,
+          shareMinor: p.shareMinor,
+        })
+        .returning();
+      return inserted;
+    });
   }
 
   async setParticipantPaid(userId: string, splitId: string, participantId: string, paid: boolean) {
@@ -118,35 +153,61 @@ export class SplitsService {
     return updated[0];
   }
 
+  /**
+   * Update a split. If `totalMinor` is being changed, validates that the
+   * new value still equals Σ participant shares (invariant preserved).
+   */
   async update(userId: string, id: string, dto: UpdateSplitDto) {
-    const updated = await this.db
-      .update(splits)
-      .set({
-        name: dto.name,
-        currency: dto.currency?.toUpperCase(),
-        totalMinor: dto.totalMinor,
-        notes: dto.notes,
-        isSettled: dto.isSettled,
-      })
-      .where(and(eq(splits.id, id), eq(splits.ownerUserId, userId)))
-      .returning();
-    if (!updated[0]) throw new NotFoundException('Split not found');
-    return updated[0];
+    return this.db.transaction(async (tx) => {
+      if (dto.totalMinor != null) {
+        const sumRow = await tx
+          .select({
+            total: sql<number>`COALESCE(SUM(${splitParticipants.shareMinor}), 0)::bigint`,
+          })
+          .from(splitParticipants)
+          .where(eq(splitParticipants.splitId, id));
+        const currentSum = Number(sumRow[0]?.total ?? 0);
+        if (currentSum > 0 && dto.totalMinor !== currentSum) {
+          throw new BadRequestException(
+            `New total ${dto.totalMinor} must equal current participant share sum ${currentSum}`,
+          );
+        }
+      }
+
+      const [updated] = await tx
+        .update(splits)
+        .set({
+          name: dto.name,
+          currency: dto.currency?.toUpperCase(),
+          totalMinor: dto.totalMinor,
+          notes: dto.notes,
+          isSettled: dto.isSettled,
+        })
+        .where(and(eq(splits.id, id), eq(splits.ownerUserId, userId)))
+        .returning();
+      if (!updated) throw new NotFoundException('Split not found');
+      return updated;
+    });
   }
 
+  /**
+   * Mark whole split settled + every participant paid — atomically.
+   */
   async settle(userId: string, id: string) {
-    const updated = await this.db
-      .update(splits)
-      .set({ isSettled: true })
-      .where(and(eq(splits.id, id), eq(splits.ownerUserId, userId)))
-      .returning();
-    if (!updated[0]) throw new NotFoundException('Split not found');
+    return this.db.transaction(async (tx) => {
+      const [updated] = await tx
+        .update(splits)
+        .set({ isSettled: true })
+        .where(and(eq(splits.id, id), eq(splits.ownerUserId, userId)))
+        .returning();
+      if (!updated) throw new NotFoundException('Split not found');
 
-    await this.db
-      .update(splitParticipants)
-      .set({ paid: true })
-      .where(eq(splitParticipants.splitId, id));
-    return updated[0];
+      await tx
+        .update(splitParticipants)
+        .set({ paid: true })
+        .where(eq(splitParticipants.splitId, id));
+      return updated;
+    });
   }
 
   async remove(userId: string, id: string) {
