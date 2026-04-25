@@ -115,48 +115,48 @@ export class InsightsService {
   }
 
   /**
-   * Returns budget adherence — how each active budget is tracking against
-   * its limit this period. Used by the Coach rule engine.
+   * Budget adherence — how each active budget is tracking against its
+   * limit this period. Used by the Coach rule engine.
+   *
+   * Single round-trip: a correlated subquery computes per-budget spend
+   * against its own `starts_on`, replacing the previous N+1 loop.
    */
   async budgetAdherence(userId: string) {
-    const list = await this.db
-      .select()
-      .from(budgets)
-      .where(and(eq(budgets.userId, userId), eq(budgets.isArchived, false)));
-
-    const out: Array<{
-      budgetId: string;
+    type Row = {
+      id: string;
       category: string;
-      limitMinor: number;
-      spentMinor: number;
-      pct: number;
-      overBudget: boolean;
-    }> = [];
+      limitMinor: string | number;
+      spentMinor: string | number | null;
+    };
+    const result = await this.db.execute(sql`
+      SELECT
+        b.id,
+        b.category,
+        b.limit_minor       AS "limitMinor",
+        COALESCE((
+          SELECT SUM(t.amount_minor)
+          FROM ${transactions} t
+          WHERE t.user_id = b.user_id
+            AND t.category = b.category
+            AND t.direction = 'debit'
+            AND t.booked_at >= b.starts_on
+        ), 0) AS "spentMinor"
+      FROM ${budgets} b
+      WHERE b.user_id = ${userId}
+        AND b.is_archived = false
+    `);
 
-    for (const b of list) {
-      const spentRow = await this.db
-        .select({
-          total: sql<number>`COALESCE(SUM(${transactions.amountMinor}), 0)::bigint`,
-        })
-        .from(transactions)
-        .where(
-          and(
-            eq(transactions.userId, userId),
-            eq(transactions.category, b.category),
-            eq(transactions.direction, 'debit'),
-            gte(transactions.bookedAt, new Date(b.startsOn)),
-          ),
-        );
-      const spent = Number(spentRow[0]?.total ?? 0);
-      out.push({
-        budgetId: b.id,
-        category: b.category,
-        limitMinor: b.limitMinor,
-        spentMinor: spent,
-        pct: b.limitMinor === 0 ? 0 : spent / b.limitMinor,
-        overBudget: spent > b.limitMinor,
-      });
-    }
-    return out;
+    return (result as unknown as Row[]).map((r) => {
+      const limitMinor = Number(r.limitMinor);
+      const spentMinor = Number(r.spentMinor ?? 0);
+      return {
+        budgetId: r.id,
+        category: r.category,
+        limitMinor,
+        spentMinor,
+        pct: limitMinor === 0 ? 0 : spentMinor / limitMinor,
+        overBudget: spentMinor > limitMinor,
+      };
+    });
   }
 }

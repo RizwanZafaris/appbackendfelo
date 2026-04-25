@@ -6,6 +6,7 @@ import { RequestUser } from '@/common/types/request-user';
 
 import { CoachRulesService } from './coach-rules.service';
 import { CoachService } from './coach.service';
+import { AskCoachDto } from './dto/ask.dto';
 
 @ApiTags('coach')
 @ApiBearerAuth()
@@ -17,19 +18,14 @@ export class CoachController {
   ) {}
 
   @Post('ask')
-  @ApiBody({
-    schema: { type: 'object', properties: { prompt: { type: 'string' } } },
-  })
+  @ApiBody({ type: AskCoachDto })
   @ApiOperation({
     summary:
       "Ask the Coach a question — answered by the rule engine using the user's real data (no LLM in Phase 1)",
   })
-  async ask(@CurrentUser() user: RequestUser, @Body() body: { prompt: string }) {
-    const prompt = (body.prompt ?? '').trim();
-    if (!prompt) {
-      return this.rules.answer(user.id, '');
-    }
-    // Best-effort: also bump the daily query counter for rate-limit visibility.
+  async ask(@CurrentUser() user: RequestUser, @Body() body: AskCoachDto) {
+    const prompt = body.prompt.trim();
+    // Best-effort: bump the daily query counter for rate-limit visibility.
     await this.svc.incrementDailyQuery(user.id).catch(() => {});
     return this.rules.answer(user.id, prompt);
   }
