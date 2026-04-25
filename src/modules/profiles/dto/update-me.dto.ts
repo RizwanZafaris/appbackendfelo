@@ -55,4 +55,28 @@ export class UpdateMeDto {
   @IsOptional()
   @IsBoolean()
   onboardingComplete?: boolean;
+
+  // ----- Flutter-driven settings (stored in profiles.settings JSONB) -----
+  // These are merged into the existing settings blob server-side; sending
+  // any subset is fine — unspecified keys are preserved.
+
+  @ApiProperty({ required: false, enum: ['system', 'light', 'dark'] })
+  @IsOptional()
+  @IsIn(['system', 'light', 'dark'])
+  themeMode?: 'system' | 'light' | 'dark';
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsBoolean()
+  operationalNotifications?: boolean;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsBoolean()
+  marketingConsent?: boolean;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsBoolean()
+  smsParserEnabled?: boolean;
 }

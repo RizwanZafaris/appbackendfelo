@@ -40,4 +40,16 @@ export class RecurringBillsController {
   remove(@CurrentUser() user: RequestUser, @Param('id', ParseUUIDPipe) id: string) {
     return this.svc.remove(user.id, id);
   }
+
+  @Post(':id/mark-paid')
+  @ApiOperation({
+    summary:
+      'Record payment for the current period and advance nextExpected by one frequency unit.',
+  })
+  markPaid(
+    @CurrentUser() user: RequestUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.svc.markPaid(user.id, id);
+  }
 }

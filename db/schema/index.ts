@@ -46,6 +46,14 @@ export const profiles = pgTable('profiles', {
     .notNull()
     .default('not_started'),
   onboardingComplete: boolean('onboarding_complete').notNull().default(false),
+  // Flexible settings blob — added in 005_profile_settings.sql.
+  // Validated client-side by ProfileSettings (freezed) in the Flutter app.
+  settings: jsonb('settings').notNull().default({
+    themeMode: 'system',
+    operationalNotifications: true,
+    marketingConsent: false,
+    smsParserEnabled: false,
+  }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
@@ -60,10 +68,18 @@ export const accounts = pgTable(
       .notNull()
       .references(() => profiles.id, { onDelete: 'cascade' }),
     provider: text('provider').notNull(),
+    // Display category — added in 004_accounts_metadata.sql.
+    type: text('type', { enum: ['bank', 'card', 'wallet'] }),
     displayName: text('display_name'),
     currency: char('currency', { length: 3 }).notNull(),
     balanceMinor: bigint('balance_minor', { mode: 'number' }),
     lastSyncedAt: timestamp('last_synced_at', { withTimezone: true }),
+    // Aggregator sync state — added in 004_accounts_metadata.sql.
+    syncStatus: text('sync_status', {
+      enum: ['synced', 'syncing', 'needs_review'],
+    })
+      .notNull()
+      .default('synced'),
     isArchived: boolean('is_archived').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
