@@ -32,6 +32,10 @@ export class NotificationsService {
         type: dto.type,
         title: dto.title,
         body: dto.body ?? null,
+        // `payload` is the typed contract for the Flutter client. The
+        // Drizzle column has a `'{}'::jsonb` default; only override when
+        // the caller supplies one.
+        ...(dto.payload ? { payload: dto.payload } : {}),
       })
       .returning();
     return inserted;
