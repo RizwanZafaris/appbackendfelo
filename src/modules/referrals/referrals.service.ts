@@ -43,8 +43,17 @@ export class ReferralsService {
           .values({ ownerUserId: userId, code })
           .returning();
         return inserted[0];
-      } catch {
-        // collision — retry
+      } catch (err) {
+        // Retry only on PG unique violation (23505); surface other errors.
+        if (
+          typeof err === 'object' &&
+          err !== null &&
+          'code' in err &&
+          (err as { code: unknown }).code === '23505'
+        ) {
+          continue;
+        }
+        throw err;
       }
     }
     throw new Error('Failed to allocate unique referral code');
@@ -112,33 +121,49 @@ export class ReferralsService {
     });
     const currency = me?.currency ?? 'CAD';
 
-    const inserted = await this.db
-      .insert(referrals)
-      .values({
-        codeId: code.id,
-        referrerUserId: code.ownerUserId,
-        referredUserId: userId,
-        rewardMinor: REWARD_MINOR,
-        rewardCurrency: currency,
-        status: 'pending',
-      })
-      .returning();
-
-    return inserted[0];
+    // Race-safe insert: the UNIQUE index on `referred_user_id` is the
+    // ultimate guard. Translate PG 23505 → 409 instead of leaking 500.
+    try {
+      const inserted = await this.db
+        .insert(referrals)
+        .values({
+          codeId: code.id,
+          referrerUserId: code.ownerUserId,
+          referredUserId: userId,
+          rewardMinor: REWARD_MINOR,
+          rewardCurrency: currency,
+          status: 'pending',
+        })
+        .returning();
+      return inserted[0];
+    } catch (err) {
+      if (
+        typeof err === 'object' &&
+        err !== null &&
+        'code' in err &&
+        (err as { code: unknown }).code === '23505'
+      ) {
+        throw new ConflictException('You already used a referral code');
+      }
+      throw err;
+    }
   }
 
   /**
-   * Mark a referral as qualified (called when the referred user hits a
-   * milestone — e.g., first transaction, KYC complete). For now this is
-   * a manual call; later it'd be triggered by an event.
+   * Mark a referral as qualified.
+   *
+   * In production this is intended to be a server-side event triggered
+   * by a real milestone (e.g. first transaction, KYC complete). The
+   * endpoint is restricted to the **referrer** so the referred user
+   * cannot self-qualify and farm rewards.
    */
   async qualify(referralId: string, actingUserId: string) {
     const ref = await this.db.query.referrals.findFirst({
       where: eq(referrals.id, referralId),
     });
     if (!ref) throw new NotFoundException('Referral not found');
-    if (ref.referrerUserId !== actingUserId && ref.referredUserId !== actingUserId) {
-      throw new BadRequestException('Not your referral');
+    if (ref.referrerUserId !== actingUserId) {
+      throw new BadRequestException('Only the referrer can qualify a referral');
     }
     const updated = await this.db
       .update(referrals)
