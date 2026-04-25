@@ -21,6 +21,8 @@ import { SubscriptionsModule } from './modules/subscriptions/subscriptions.modul
 import { CoachModule } from './modules/coach/coach.module';
 import { SecurityModule } from './modules/security/security.module';
 import { ReferralsModule } from './modules/referrals/referrals.module';
+import { SplitsModule } from './modules/splits/splits.module';
+import { InvestmentsModule } from './modules/investments/investments.module';
 
 @Module({
   imports: [
@@ -61,6 +63,8 @@ import { ReferralsModule } from './modules/referrals/referrals.module';
     CoachModule,
     SecurityModule,
     ReferralsModule,
+    SplitsModule,
+    InvestmentsModule,
   ],
   providers: [
     {
