@@ -23,6 +23,7 @@ import { SecurityModule } from './modules/security/security.module';
 import { ReferralsModule } from './modules/referrals/referrals.module';
 import { SplitsModule } from './modules/splits/splits.module';
 import { InvestmentsModule } from './modules/investments/investments.module';
+import { InsightsModule } from './modules/insights/insights.module';
 
 @Module({
   imports: [
@@ -65,6 +66,7 @@ import { InvestmentsModule } from './modules/investments/investments.module';
     ReferralsModule,
     SplitsModule,
     InvestmentsModule,
+    InsightsModule,
   ],
   providers: [
     {
