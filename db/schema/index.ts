@@ -1,14 +1,12 @@
 /**
- * Felo — canonical database schema.
+ * Felo — canonical database schema (Path A: Supabase Auth).
  *
- * Mirrors the SQL DDL in `db/supabase/000_init.sql` exactly. Drizzle is the
- * source of truth for typed queries; the SQL file is the source of truth for
- * Supabase RLS policies (which Drizzle does not yet model natively).
+ * Mirrors the live SQL applied at db/supabase/000_init.sql exactly. The
+ * source of truth for queries is this file; for RLS policies + triggers
+ * it's the SQL file. Keep them in lockstep.
  *
- * When you add a column or table here:
- *   1. Update `db/supabase/000_init.sql` (or write a new migration file).
- *   2. Run `npm run db:generate` to emit a Drizzle migration.
- *   3. Apply via `npm run db:migrate` (local) or push the SQL to Supabase.
+ * Identity model: profiles.id IS auth.users.id (Supabase Auth pattern).
+ * Money convention: BIGINT minor units (cents/paisa), never floats.
  */
 import { sql } from 'drizzle-orm';
 import {
@@ -27,30 +25,31 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 
-// -- USERS --------------------------------------------------------------
-export const users = pgTable(
-  'users',
-  {
-    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
-    firebaseUid: text('firebase_uid').notNull().unique(),
-    email: text('email').notNull().unique(),
-    displayName: text('display_name'),
-    phoneE164: text('phone_e164'),
-    corridor: text('corridor', { enum: ['canada', 'pakistan', 'other'] }).notNull(),
-    languageCode: text('language_code').notNull().default('en'),
-    kycStatus: text('kyc_status', {
-      enum: ['not_started', 'in_progress', 'submitted', 'approved', 'rejected'],
-    })
-      .notNull()
-      .default('not_started'),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-    deletedAt: timestamp('deleted_at', { withTimezone: true }),
-  },
-  (t) => ({
-    firebaseUidIdx: uniqueIndex('idx_users_firebase_uid').on(t.firebaseUid),
-  }),
-);
+// -- PROFILES (1:1 with auth.users) -------------------------------------
+export const profiles = pgTable('profiles', {
+  id: uuid('id').primaryKey(), // FK to auth.users(id) enforced in SQL
+  email: text('email'),
+  displayName: text('display_name'),
+  phoneE164: text('phone_e164'),
+  monthlyIncomeMinor: bigint('monthly_income_minor', { mode: 'number' }),
+  currency: char('currency', { length: 3 }).notNull().default('CAD'),
+  country: text('country'),
+  corridor: text('corridor', { enum: ['canada', 'pakistan', 'other'] })
+    .notNull()
+    .default('other'),
+  languageCode: text('language_code').notNull().default('en'),
+  feloScore: integer('felo_score'),
+  subscriptionTier: text('subscription_tier').notNull().default('free'),
+  kycStatus: text('kyc_status', {
+    enum: ['not_started', 'in_progress', 'submitted', 'approved', 'rejected'],
+  })
+    .notNull()
+    .default('not_started'),
+  onboardingComplete: boolean('onboarding_complete').notNull().default(false),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+});
 
 // -- ACCOUNTS -----------------------------------------------------------
 export const accounts = pgTable(
@@ -59,8 +58,8 @@ export const accounts = pgTable(
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     userId: uuid('user_id')
       .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
-    provider: text('provider').notNull(), // 'td' | 'rbc' | 'easypaisa' | 'jazzcash' | 'manual'
+      .references(() => profiles.id, { onDelete: 'cascade' }),
+    provider: text('provider').notNull(),
     displayName: text('display_name'),
     currency: char('currency', { length: 3 }).notNull(),
     balanceMinor: bigint('balance_minor', { mode: 'number' }),
@@ -80,16 +79,18 @@ export const transactions = pgTable(
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     userId: uuid('user_id')
       .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
+      .references(() => profiles.id, { onDelete: 'cascade' }),
     accountId: uuid('account_id').references(() => accounts.id),
     merchant: text('merchant'),
     category: text('category'),
+    userCategory: text('user_category'),
     currency: char('currency', { length: 3 }).notNull(),
     amountMinor: bigint('amount_minor', { mode: 'number' }).notNull(),
     direction: text('direction', { enum: ['debit', 'credit'] }).notNull(),
     source: text('source', {
       enum: ['sms', 'manual', 'bank_alert', 'ocr', 'import'],
     }).notNull(),
+    rawSms: text('raw_sms'),
     parserConfidence: numeric('parser_confidence', { precision: 3, scale: 2 }),
     bookedAt: timestamp('booked_at', { withTimezone: true }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -110,7 +111,7 @@ export const budgets = pgTable(
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     userId: uuid('user_id')
       .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
+      .references(() => profiles.id, { onDelete: 'cascade' }),
     category: text('category').notNull(),
     currency: char('currency', { length: 3 }).notNull(),
     limitMinor: bigint('limit_minor', { mode: 'number' }).notNull(),
@@ -133,18 +134,114 @@ export const goals = pgTable(
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     userId: uuid('user_id')
       .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
+      .references(() => profiles.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
+    icon: text('icon'),
     currency: char('currency', { length: 3 }).notNull(),
     targetMinor: bigint('target_minor', { mode: 'number' }).notNull(),
     savedMinor: bigint('saved_minor', { mode: 'number' }).notNull().default(0),
     targetDate: date('target_date'),
-    cadence: text('cadence', { enum: ['weekly', 'monthly', 'manual'] }).notNull(),
+    cadence: text('cadence', { enum: ['weekly', 'monthly', 'manual'] })
+      .notNull()
+      .default('manual'),
     shared: boolean('shared').notNull().default(false),
+    isCompleted: boolean('is_completed').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
     userIdx: index('idx_goals_user').on(t.userId),
+  }),
+);
+
+// -- FELO SCORES --------------------------------------------------------
+export const feloScores = pgTable(
+  'felo_scores',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => profiles.id, { onDelete: 'cascade' }),
+    score: integer('score').notNull(),
+    savingsRate: integer('savings_rate'),
+    budgetAdherence: integer('budget_adherence'),
+    expenseVolatility: integer('expense_volatility'),
+    billConsistency: integer('bill_consistency'),
+    goalProgress: integer('goal_progress'),
+    calculatedAt: timestamp('calculated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    userCalcIdx: index('idx_felo_scores_user').on(t.userId, t.calculatedAt),
+  }),
+);
+
+// -- RECURRING BILLS ----------------------------------------------------
+export const recurringBills = pgTable(
+  'recurring_bills',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => profiles.id, { onDelete: 'cascade' }),
+    merchant: text('merchant').notNull(),
+    amountMinor: bigint('amount_minor', { mode: 'number' }).notNull(),
+    currency: char('currency', { length: 3 }).notNull(),
+    category: text('category'),
+    frequency: text('frequency', {
+      enum: ['weekly', 'monthly', 'quarterly', 'yearly'],
+    }).notNull(),
+    nextExpected: date('next_expected'),
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    userIdx: index('idx_recurring_user').on(t.userId),
+  }),
+);
+
+// -- SUBSCRIPTIONS ------------------------------------------------------
+export const subscriptions = pgTable('subscriptions', {
+  id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => profiles.id, { onDelete: 'cascade' }),
+  plan: text('plan').notNull(),
+  status: text('status', {
+    enum: ['trialing', 'active', 'past_due', 'canceled', 'expired'],
+  }).notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
+  paymentProvider: text('payment_provider'),
+  externalId: text('external_id'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// -- COACH MEMORY -------------------------------------------------------
+export const coachConversations = pgTable(
+  'coach_conversations',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => profiles.id, { onDelete: 'cascade' }),
+    messages: jsonb('messages').notNull().default([]),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    userUpdatedIdx: index('idx_coach_conv_user').on(t.userId, t.updatedAt),
+  }),
+);
+
+export const coachQueries = pgTable(
+  'coach_queries',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => profiles.id, { onDelete: 'cascade' }),
+    queryDate: date('query_date').notNull(),
+    queryCount: integer('query_count').notNull().default(1),
+  },
+  (t) => ({
+    userDateUnique: uniqueIndex('idx_coach_queries_user_date').on(t.userId, t.queryDate),
   }),
 );
 
@@ -153,7 +250,7 @@ export const familyGroups = pgTable('family_groups', {
   id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
   ownerUserId: uuid('owner_user_id')
     .notNull()
-    .references(() => users.id),
+    .references(() => profiles.id),
   name: text('name'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
@@ -167,7 +264,7 @@ export const familyMembers = pgTable(
       .references(() => familyGroups.id, { onDelete: 'cascade' }),
     userId: uuid('user_id')
       .notNull()
-      .references(() => users.id),
+      .references(() => profiles.id),
     role: text('role', { enum: ['admin', 'member', 'viewer'] }).notNull(),
     canViewSharedTransactions: boolean('can_view_shared_transactions')
       .notNull()
@@ -177,29 +274,29 @@ export const familyMembers = pgTable(
   },
   (t) => ({
     familyUserUnique: uniqueIndex('idx_family_members_unique').on(t.familyId, t.userId),
+    userIdx: index('idx_family_members_user').on(t.userId),
   }),
 );
 
-// -- CONSENT LEDGER (audit) ---------------------------------------------
 export const consentEvents = pgTable('consent_events', {
   id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
   actorUserId: uuid('actor_user_id').notNull(),
   subjectUserId: uuid('subject_user_id').notNull(),
   resourceType: text('resource_type'),
   resourceId: uuid('resource_id'),
-  action: text('action'), // 'viewed' | 'edited' | 'shared' | 'revoked'
+  action: text('action'),
   occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
   metadata: jsonb('metadata').notNull().default({}),
 });
 
-// -- NOTIFICATIONS ------------------------------------------------------
+// -- NOTIFICATIONS + DEVICES -------------------------------------------
 export const notifications = pgTable('notifications', {
   id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
   userId: uuid('user_id')
     .notNull()
-    .references(() => users.id, { onDelete: 'cascade' }),
+    .references(() => profiles.id, { onDelete: 'cascade' }),
   channel: text('channel', { enum: ['push', 'email', 'inapp', 'sms'] }).notNull(),
-  type: text('type').notNull(), // 'budget_alert' | 'goal_milestone' | 'family_invite' | 'system'
+  type: text('type').notNull(),
   title: text('title').notNull(),
   body: text('body'),
   payload: jsonb('payload').notNull().default({}),
@@ -208,21 +305,20 @@ export const notifications = pgTable('notifications', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
-// -- DEVICES (push) -----------------------------------------------------
 export const devices = pgTable('devices', {
   id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
   userId: uuid('user_id')
     .notNull()
-    .references(() => users.id, { onDelete: 'cascade' }),
+    .references(() => profiles.id, { onDelete: 'cascade' }),
   platform: text('platform', { enum: ['ios', 'android', 'web'] }).notNull(),
   pushToken: text('push_token').notNull(),
   lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
-// Convenience type exports for repositories.
-export type User = typeof users.$inferSelect;
-export type NewUser = typeof users.$inferInsert;
+// -- Type exports for repositories --------------------------------------
+export type Profile = typeof profiles.$inferSelect;
+export type NewProfile = typeof profiles.$inferInsert;
 export type Account = typeof accounts.$inferSelect;
 export type NewAccount = typeof accounts.$inferInsert;
 export type Transaction = typeof transactions.$inferSelect;
@@ -231,6 +327,11 @@ export type Budget = typeof budgets.$inferSelect;
 export type NewBudget = typeof budgets.$inferInsert;
 export type Goal = typeof goals.$inferSelect;
 export type NewGoal = typeof goals.$inferInsert;
+export type FeloScore = typeof feloScores.$inferSelect;
+export type RecurringBill = typeof recurringBills.$inferSelect;
+export type Subscription = typeof subscriptions.$inferSelect;
+export type CoachConversation = typeof coachConversations.$inferSelect;
+export type CoachQuery = typeof coachQueries.$inferSelect;
 export type FamilyGroup = typeof familyGroups.$inferSelect;
 export type FamilyMember = typeof familyMembers.$inferSelect;
 export type Notification = typeof notifications.$inferSelect;

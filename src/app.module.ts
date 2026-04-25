@@ -1,29 +1,28 @@
-import { Module } from '@nestjs/common';
+import { Module, MiddlewareConsumer, NestModule } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { LoggerModule } from 'nestjs-pino';
 
-import { configValidationSchema, configFactory } from './config/config';
+import { configFactory } from './config/config';
 import { DbModule } from './common/db/db.module';
-import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
+import { SupabaseJwtGuard } from './common/guards/supabase-jwt.guard';
 import { CurrentUserMiddleware } from './common/middleware/current-user.middleware';
 
 import { AuthModule } from './modules/auth/auth.module';
 import { HealthModule } from './modules/health/health.module';
-import { UsersModule } from './modules/users/users.module';
+import { ProfilesModule } from './modules/profiles/profiles.module';
 import { AccountsModule } from './modules/accounts/accounts.module';
 import { BudgetsModule } from './modules/budgets/budgets.module';
 import { GoalsModule } from './modules/goals/goals.module';
 import { TransactionsModule } from './modules/transactions/transactions.module';
-import { MiddlewareConsumer, NestModule } from '@nestjs/common';
+import { FeloScoresModule } from './modules/felo-scores/felo-scores.module';
+import { RecurringBillsModule } from './modules/recurring-bills/recurring-bills.module';
+import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module';
+import { CoachModule } from './modules/coach/coach.module';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({
-      isGlobal: true,
-      load: [configFactory],
-      validationSchema: configValidationSchema,
-    }),
+    ConfigModule.forRoot({ isGlobal: true, load: [configFactory] }),
     LoggerModule.forRoot({
       pinoHttp: {
         autoLogging: true,
@@ -49,16 +48,20 @@ import { MiddlewareConsumer, NestModule } from '@nestjs/common';
     DbModule,
     AuthModule,
     HealthModule,
-    UsersModule,
+    ProfilesModule,
     AccountsModule,
     BudgetsModule,
     GoalsModule,
     TransactionsModule,
+    FeloScoresModule,
+    RecurringBillsModule,
+    SubscriptionsModule,
+    CoachModule,
   ],
   providers: [
     {
       provide: APP_GUARD,
-      useClass: JwtAuthGuard,
+      useClass: SupabaseJwtGuard,
     },
   ],
 })

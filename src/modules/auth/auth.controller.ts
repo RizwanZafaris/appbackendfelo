@@ -1,29 +1,23 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import { Controller, Get } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
-import { Public } from '@/common/decorators/public.decorator';
 import { RequestUser } from '@/common/types/request-user';
 
-import { AuthService } from './auth.service';
-import { ExchangeRequestDto, ExchangeResponseDto } from './dto/exchange.dto';
-
+/**
+ * Path A — Supabase Auth handles signup, signin, password reset, MFA.
+ * The Flutter client uses supabase_flutter directly, then sends the
+ * resulting JWT in `Authorization: Bearer ...` to our /v1/* endpoints.
+ *
+ * The backend therefore only needs `/auth/me` for echoing identity.
+ * Sign-in / sign-up flows live entirely on the Supabase side.
+ */
 @ApiTags('auth')
+@ApiBearerAuth()
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly auth: AuthService) {}
-
-  @Public()
-  @Post('exchange')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Exchange a Firebase ID token for a Felo JWT pair' })
-  exchange(@Body() body: ExchangeRequestDto): Promise<ExchangeResponseDto> {
-    return this.auth.exchange(body);
-  }
-
   @Get('me')
-  @ApiBearerAuth()
-  @ApiOperation({ summary: 'Return the authenticated user' })
+  @ApiOperation({ summary: 'Echo back the bearer identity' })
   me(@CurrentUser() user: RequestUser) {
     return user;
   }

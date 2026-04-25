@@ -12,7 +12,7 @@
 | Language | TypeScript 5 (strict) |
 | ORM | Drizzle |
 | Database | Postgres 16 (Supabase compatible — RLS-ready) |
-| Auth | Firebase Admin → Felo JWT (15min access + 30d refresh) |
+| Auth | Supabase Auth (ECC P-256 JWTs) — backend verifies via JWKS, no shared secret |
 | Validation | class-validator + class-transformer |
 | Docs | OpenAPI 3.1 / Swagger UI at `/docs` |
 | Logging | nestjs-pino (structured, redacted) |
@@ -85,11 +85,14 @@ All routes prefixed `/v1`. All authenticated routes expect `Authorization: Beare
 | Method | Path | Public? | Notes |
 |---|---|---|---|
 | `GET` | `/health` | yes | Liveness + DB probe |
-| `POST` | `/auth/exchange` | yes | Firebase ID token → Felo JWT pair (just-in-time user provisioning) |
-| `GET` | `/auth/me` | no | Echo back the bearer's identity |
-| `GET` | `/users/me` | no | Full user record |
-| `PATCH` | `/users/me` | no | Update name / language / corridor |
-| `DELETE` | `/users/me` | no | Soft-delete (30-day grace) |
+| `GET` | `/auth/me` | no | Echo back the bearer's identity (Supabase JWT verified via JWKS) |
+| `GET` | `/profiles/me` | no | Full profile (auto-created on signup by Supabase trigger) |
+| `PATCH` | `/profiles/me` | no | Update profile fields |
+| `DELETE` | `/profiles/me` | no | Soft-delete (30-day grace) |
+| `GET` | `/felo-scores/latest` `/felo-scores/history` | no | Felo Score |
+| `GET POST PATCH DELETE` | `/recurring-bills[/:id]` | no | Recurring bill CRUD |
+| `GET` | `/subscriptions` `/subscriptions/current` | no | Plan history |
+| `GET POST` | `/coach/conversations[/:id][/messages]` | no | Coach memory |
 | `GET` `POST` `PATCH` `DELETE` | `/accounts[/:id]` | no | Account CRUD |
 | `GET` `POST` `PATCH` `DELETE` | `/budgets[/:id]` | no | Budget CRUD; `GET /:id` includes computed `spentMinor` |
 | `GET` `POST` `PATCH` `DELETE` | `/goals[/:id]` | no | Goal CRUD |
