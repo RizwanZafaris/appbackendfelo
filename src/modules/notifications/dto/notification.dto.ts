@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsBoolean, IsIn, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsIn, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class RegisterDeviceDto {
   @ApiProperty({ enum: ['ios', 'android', 'web'] })
@@ -11,10 +11,9 @@ export class RegisterDeviceDto {
   @IsNotEmpty()
   pushToken!: string;
 
-  @ApiProperty({ required: false })
-  @IsOptional()
-  @IsBoolean()
-  isTrusted?: boolean;
+  // NOTE: `isTrusted` is intentionally NOT in the wire DTO. Trust must be
+  // server-set (e.g., after a successful MFA verification on this device),
+  // never client-asserted.
 }
 
 export class CreateNotificationDto {

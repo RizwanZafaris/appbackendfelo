@@ -1,4 +1,14 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  ForbiddenException,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
@@ -26,9 +36,18 @@ export class NotificationsController {
     return this.svc.unreadCount(user.id);
   }
 
+  /**
+   * Test/debug endpoint to create an in-app notification. Production
+   * builds disable this — real notifications are emitted server-side
+   * by the notification service in response to budget/goal/family
+   * events. Returns 403 in production to make abuse impossible.
+   */
   @Post()
-  @ApiOperation({ summary: 'Create an in-app notification (test/debug)' })
+  @ApiOperation({ summary: 'Create an in-app notification (debug-only; 403 in production)' })
   create(@CurrentUser() user: RequestUser, @Body() dto: CreateNotificationDto) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new ForbiddenException('Disabled in production');
+    }
     return this.svc.create(user.id, dto);
   }
 

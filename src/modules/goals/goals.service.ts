@@ -77,54 +77,68 @@ export class GoalsService {
 
   /**
    * Add a contribution and report any milestones the user just crossed
-   * (25/50/75/100%). Used by the Flutter app to fire a confetti dialog.
+   * (25/50/75/100%). Atomic: a single UPDATE returns both old and new
+   * `saved_minor` so concurrent contributions can't double-fire the
+   * same milestone.
    */
   async contribute(userId: string, id: string, dto: ContributeGoalDto) {
-    const before = await this.detail(userId, id);
-    const updated = await this.db
-      .update(goals)
-      .set({ savedMinor: sql`${goals.savedMinor} + ${dto.amountMinor}` })
-      .where(and(eq(goals.id, id), eq(goals.userId, userId)))
-      .returning();
-    if (!updated[0]) throw new NotFoundException('Goal not found');
+    type Row = {
+      id: string;
+      userId: string;
+      savedMinor: number | string;
+      previousSavedMinor: number | string;
+      targetMinor: number | string;
+      isCompleted: boolean;
+    };
 
-    const after = updated[0];
-    const milestones = computeCrossedMilestones(
-      before.savedMinor,
-      after.savedMinor,
-      after.targetMinor,
-    );
+    const result = await this.db.execute(sql`
+      UPDATE ${goals}
+         SET saved_minor = saved_minor + ${dto.amountMinor}
+       WHERE id = ${id} AND user_id = ${userId}
+       RETURNING
+         id,
+         user_id        AS "userId",
+         saved_minor    AS "savedMinor",
+         saved_minor - ${dto.amountMinor} AS "previousSavedMinor",
+         target_minor   AS "targetMinor",
+         is_completed   AS "isCompleted"
+    `);
+    const rows = result as unknown as Row[];
+    const row = rows[0];
+    if (!row) throw new NotFoundException('Goal not found');
 
-    // Mark goal complete if user crossed 100%.
-    if (milestones.includes(100) && !after.isCompleted) {
-      const [final] = await this.db
+    const previous = Number(row.previousSavedMinor);
+    const current = Number(row.savedMinor);
+    const target = Number(row.targetMinor);
+    const milestones = computeCrossedMilestones(previous, current, target);
+
+    // Mark complete on 100% — same UPDATE keeps userId in WHERE for
+    // defense-in-depth even though the row was already filtered.
+    if (milestones.includes(100) && !row.isCompleted) {
+      await this.db
         .update(goals)
         .set({ isCompleted: true })
-        .where(eq(goals.id, id))
-        .returning();
-      return { goal: final, milestones };
+        .where(and(eq(goals.id, id), eq(goals.userId, userId)));
     }
 
-    return { goal: after, milestones };
+    const goal = await this.detail(userId, id);
+    return { goal, milestones };
   }
 
   /**
-   * Returns weekly contribution streak for the goal.
-   * Definition: number of *consecutive recent ISO weeks* where at least
-   * one debit transaction tagged with the goal's category occurred.
+   * Weekly contribution streak — Phase-1 STUB.
    *
-   * For the no-deps build we approximate by walking saved_minor diffs;
-   * a real streak engine would index a goal_contributions table, which
-   * is a Phase-2 enhancement.
+   * A real implementation needs a `goal_contributions` table indexed
+   * by (goal_id, week). Until that ships, we return null + a status
+   * marker so the Flutter UI can hide the badge instead of showing a
+   * fake "1 week" streak.
    */
-  async streak(userId: string, id: string): Promise<{ weeks: number }> {
-    // Until we model contributions individually, return the trivial value
-    // derived from cadence + isCompleted state. A non-zero saved_minor
-    // for a weekly-cadence goal counts as one week.
-    const goal = await this.detail(userId, id);
-    if (goal.savedMinor === 0) return { weeks: 0 };
-    if (goal.cadence === 'weekly') return { weeks: 1 };
-    return { weeks: 0 };
+  async streak(
+    userId: string,
+    id: string,
+  ): Promise<{ weeks: number | null; status: 'unimplemented' | 'ok' }> {
+    await this.detail(userId, id); // ownership check
+    return { weeks: null, status: 'unimplemented' };
   }
 
   async remove(userId: string, id: string) {

@@ -71,33 +71,34 @@ export class NotificationsService {
   }
 
   // ---- Devices ------------------------------------------------------
+  /**
+   * Idempotent device registration. Backed by the UNIQUE (user_id,
+   * push_token) constraint added in 003_sprint4_hardening.sql —
+   * concurrent calls converge on a single row.
+   *
+   * NOTE: `isTrusted` is intentionally **not** taken from the client
+   * payload. Trust is a server-side decision (e.g., set after MFA
+   * verification on this device); accepting it from the wire would
+   * let a client bypass any future trusted-device 2FA-skip rule.
+   */
   async registerDevice(userId: string, dto: RegisterDeviceDto) {
-    // Upsert by (user_id, push_token) — device-level uniqueness.
-    const existing = await this.db.query.devices.findFirst({
-      where: and(eq(devices.userId, userId), eq(devices.pushToken, dto.pushToken)),
-    });
-    if (existing) {
-      const [updated] = await this.db
-        .update(devices)
-        .set({
-          platform: dto.platform,
-          isTrusted: dto.isTrusted ?? existing.isTrusted,
-          lastSeenAt: new Date(),
-        })
-        .where(eq(devices.id, existing.id))
-        .returning();
-      return updated;
-    }
-    const [inserted] = await this.db
+    const [row] = await this.db
       .insert(devices)
       .values({
         userId,
         platform: dto.platform,
         pushToken: dto.pushToken,
-        isTrusted: dto.isTrusted ?? false,
+        isTrusted: false, // server-set only
+      })
+      .onConflictDoUpdate({
+        target: [devices.userId, devices.pushToken],
+        set: {
+          platform: dto.platform,
+          lastSeenAt: new Date(),
+        },
       })
       .returning();
-    return inserted;
+    return row;
   }
 
   listDevices(userId: string) {
