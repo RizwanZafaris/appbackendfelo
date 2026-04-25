@@ -2,33 +2,67 @@
 
 > 🟡 **Stage 0 skeleton.** Provider implementations land at Stage 7.
 
-Per Decision **D-005** (`docs/decision-log.md` in `appuifelo`), SMS OTP
-delivery is **not** a single-vendor choice. Different corridors have wildly
-different deliverability, cost, and compliance profiles, so we use the
-**Strategy pattern**: one `SmsProvider` interface + N concrete adapters,
-selected at runtime based on the destination phone's country code.
+Per Decisions **D-005**, **D-006**, **D-007** (`docs/decision-log.md` in
+`appuifelo`):
+
+- SMS OTP delivery is **not** a single-vendor choice (D-005)
+- Routing is keyed on **IP-detected location first**, E.164 prefix as
+  fallback (D-006)
+- The vendor names below are **placeholders** until procurement closes (D-007)
+
+We use the **Strategy pattern**: one `SmsProvider` interface + N adapters,
+the registry resolves "which provider for this user" at request time using
+two-key routing.
 
 ## Architecture
 
 ```
-SmsService.sendOtp(phone, locale)
+SmsService.sendOtp({phoneE164, locale, ipDetectedCountry?})
     │
-    ├─ resolves country code from E.164 prefix
+    ├─ Routing decision (two-key, priority order):
+    │     1. ipDetectedCountry         ── primary (set by Phase 2 resolver)
+    │     2. E.164 prefix → country    ── fallback if IP unavailable
+    │     3. universal fallback        ── if neither yields a provider
     │
-    ├─ asks SmsProviderRegistry for the provider for that country
+    ├─ SmsProviderRegistry.for(country)  → returns SmsProvider
     │
-    └─ calls SmsProvider.send({phone, code, locale, sender_id})
+    └─ provider.send({phone, code, locale, senderId})
         │
-        ├─ Twilio        ── default for diaspora corridors (CA / UK / US)
-        ├─ MSG91         ── India (DLT-registered, mandatory for OTP)
-        ├─ Veevotech     ── Pakistan
-        ├─ Karix         ── UAE
-        ├─ Msegat        ── Saudi
-        ├─ AlphaNet      ── Bangladesh
-        ├─ Sparrow       ── Nepal
-        ├─ Mobitel       ── Sri Lanka
+        ├─ Twilio        ── universal fallback + default for diaspora
+        │                   corridors (CA / UK / US) — placeholder, may be
+        │                   replaced by an active vendor discussion outcome
+        ├─ <PK_VENDOR>   ── Pakistan (placeholder for active discussion)
+        ├─ <IN_VENDOR>   ── India (DLT-registered required by TRAI)
+        ├─ <AE_VENDOR>   ── UAE (TRA sender-ID whitelisting required)
+        ├─ <SA_VENDOR>   ── Saudi (CITC compliance)
+        ├─ <BD_VENDOR>   ── Bangladesh
+        ├─ <NP_VENDOR>   ── Nepal
+        ├─ <LK_VENDOR>   ── Sri Lanka
         └─ ConsoleLogger ── dev mode (logs OTP to stdout, never sends)
 ```
+
+**Vendor names are placeholders.** Per D-007, the architecture commits to
+the Strategy pattern + registry; specific providers self-register via DI
+tokens once procurement closes. Adding a new corridor adapter is a new
+file + module manifest entry — no changes to the routing layer.
+
+## Why IP-based routing (not just E.164)?
+
+D-006 lays out the reasoning. Summary:
+
+- **Resident user** (IP=PK, phone=PK) → local provider, cheap
+- **Diaspora signing up at home** (IP=CA, phone=CA) → diaspora provider, cheap
+- **Diaspora with home-country SIM** (IP=CA, phone=PK) → diaspora provider
+  delivers internationally; matches user expectations of "the SMS arrives
+  on this device wherever it is"
+- **Resident traveling abroad** (IP=AE, phone=PK) → AE provider attempts
+  international delivery; if it fails, user falls back to email/in-app
+  verification
+
+The cost penalty for the few diaspora-with-foreign-SIM cases is acceptable.
+Routing pure-E.164 would push diaspora users through their home-country
+local vendor for inbound international SMS — strictly more expensive in
+deliverability terms.
 
 ## Why not Twilio everywhere?
 
