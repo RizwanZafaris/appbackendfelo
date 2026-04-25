@@ -24,6 +24,7 @@ import { ReferralsModule } from './modules/referrals/referrals.module';
 import { SplitsModule } from './modules/splits/splits.module';
 import { InvestmentsModule } from './modules/investments/investments.module';
 import { InsightsModule } from './modules/insights/insights.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 
 @Module({
   imports: [
@@ -67,6 +68,7 @@ import { InsightsModule } from './modules/insights/insights.module';
     SplitsModule,
     InvestmentsModule,
     InsightsModule,
+    NotificationsModule,
   ],
   providers: [
     {
