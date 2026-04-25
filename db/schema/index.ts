@@ -312,9 +312,130 @@ export const devices = pgTable('devices', {
     .references(() => profiles.id, { onDelete: 'cascade' }),
   platform: text('platform', { enum: ['ios', 'android', 'web'] }).notNull(),
   pushToken: text('push_token').notNull(),
+  isTrusted: boolean('is_trusted').notNull().default(false),
   lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+// -- F010 — Multi-factor auth (TOTP) ----------------------------------
+export const mfaSecrets = pgTable('mfa_secrets', {
+  id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  userId: uuid('user_id')
+    .unique()
+    .notNull()
+    .references(() => profiles.id, { onDelete: 'cascade' }),
+  secret: text('secret').notNull(),
+  verified: boolean('verified').notNull().default(false),
+  recoveryCodes: jsonb('recovery_codes').notNull().default([]),
+  enabledAt: timestamp('enabled_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// -- F011 — Referrals + FELO Plus -------------------------------------
+export const referralCodes = pgTable('referral_codes', {
+  id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  ownerUserId: uuid('owner_user_id')
+    .unique()
+    .notNull()
+    .references(() => profiles.id, { onDelete: 'cascade' }),
+  code: text('code').unique().notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const referrals = pgTable('referrals', {
+  id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  codeId: uuid('code_id')
+    .notNull()
+    .references(() => referralCodes.id, { onDelete: 'cascade' }),
+  referrerUserId: uuid('referrer_user_id')
+    .notNull()
+    .references(() => profiles.id, { onDelete: 'cascade' }),
+  referredUserId: uuid('referred_user_id')
+    .unique()
+    .notNull()
+    .references(() => profiles.id, { onDelete: 'cascade' }),
+  status: text('status', {
+    enum: ['pending', 'qualified', 'rewarded', 'expired', 'revoked'],
+  })
+    .notNull()
+    .default('pending'),
+  rewardMinor: bigint('reward_minor', { mode: 'number' }),
+  rewardCurrency: char('reward_currency', { length: 3 }),
+  qualifiedAt: timestamp('qualified_at', { withTimezone: true }),
+  rewardedAt: timestamp('rewarded_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// -- F007 — Splits ----------------------------------------------------
+export const splits = pgTable(
+  'splits',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    ownerUserId: uuid('owner_user_id')
+      .notNull()
+      .references(() => profiles.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    currency: char('currency', { length: 3 }).notNull(),
+    totalMinor: bigint('total_minor', { mode: 'number' }).notNull(),
+    notes: text('notes'),
+    isSettled: boolean('is_settled').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({ ownerIdx: index('idx_splits_owner').on(t.ownerUserId) }),
+);
+
+export const splitParticipants = pgTable(
+  'split_participants',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    splitId: uuid('split_id')
+      .notNull()
+      .references(() => splits.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id').references(() => profiles.id),
+    displayName: text('display_name').notNull(),
+    shareMinor: bigint('share_minor', { mode: 'number' }).notNull(),
+    paid: boolean('paid').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({ splitIdx: index('idx_split_participants_split').on(t.splitId) }),
+);
+
+// -- F008 — Investments -----------------------------------------------
+export const investments = pgTable(
+  'investments',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => profiles.id, { onDelete: 'cascade' }),
+    symbol: text('symbol').notNull(),
+    name: text('name'),
+    assetClass: text('asset_class', {
+      enum: ['equity', 'etf', 'crypto', 'mutual_fund', 'bond', 'real_estate', 'other'],
+    })
+      .notNull()
+      .default('equity'),
+    currency: char('currency', { length: 3 }).notNull(),
+    units: numeric('units', { precision: 20, scale: 8 }).notNull(),
+    costBasisMinor: bigint('cost_basis_minor', { mode: 'number' }).notNull(),
+    lastPriceMinor: bigint('last_price_minor', { mode: 'number' }),
+    lastPricedAt: timestamp('last_priced_at', { withTimezone: true }),
+    notes: text('notes'),
+    isArchived: boolean('is_archived').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({ userIdx: index('idx_investments_user').on(t.userId) }),
+);
+
+// Type exports
+export type MfaSecret = typeof mfaSecrets.$inferSelect;
+export type ReferralCode = typeof referralCodes.$inferSelect;
+export type Referral = typeof referrals.$inferSelect;
+export type Split = typeof splits.$inferSelect;
+export type SplitParticipant = typeof splitParticipants.$inferSelect;
+export type Investment = typeof investments.$inferSelect;
+export type NewInvestment = typeof investments.$inferInsert;
 
 // -- Type exports for repositories --------------------------------------
 export type Profile = typeof profiles.$inferSelect;

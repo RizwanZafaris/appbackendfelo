@@ -19,6 +19,8 @@ import { FeloScoresModule } from './modules/felo-scores/felo-scores.module';
 import { RecurringBillsModule } from './modules/recurring-bills/recurring-bills.module';
 import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module';
 import { CoachModule } from './modules/coach/coach.module';
+import { SecurityModule } from './modules/security/security.module';
+import { ReferralsModule } from './modules/referrals/referrals.module';
 
 @Module({
   imports: [
@@ -57,6 +59,8 @@ import { CoachModule } from './modules/coach/coach.module';
     RecurringBillsModule,
     SubscriptionsModule,
     CoachModule,
+    SecurityModule,
+    ReferralsModule,
   ],
   providers: [
     {
