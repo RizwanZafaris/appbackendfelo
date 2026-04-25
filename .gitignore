@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build
+dist/
+build/
+*.tsbuildinfo
+
+# Tests / coverage
+coverage/
+*.lcov
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+firebase-service-account*.json
+*.pem
+*.key
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# OS / IDE
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Misc
+.cache/
+tmp/

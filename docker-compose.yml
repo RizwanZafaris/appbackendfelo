@@ -1,0 +1,48 @@
+# Local dev stack. Spins up Postgres + the API.
+# Usage:
+#   docker compose up -d postgres   # just the DB
+#   docker compose up               # API + DB
+
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: felo-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: felo
+    ports:
+      - '5432:5432'
+    volumes:
+      - felo_pg_data:/var/lib/postgresql/data
+      - ./db/supabase/000_init.sql:/docker-entrypoint-initdb.d/000_init.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d felo']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: .
+    container_name: felo-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      LOG_LEVEL: debug
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/felo
+      JWT_SECRET: dev-secret-change-me-in-production-32-bytes-min
+      JWT_ACCESS_TTL: 15m
+      JWT_REFRESH_TTL: 30d
+      CORS_ORIGINS: http://localhost:3000,http://localhost:5173
+    ports:
+      - '3000:3000'
+
+volumes:
+  felo_pg_data:

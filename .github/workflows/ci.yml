@@ -1,0 +1,40 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-test-build:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: felo
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d felo"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/felo
+      JWT_SECRET: ci-secret-32-bytes-minimum-for-jwt-hs256
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - name: Apply schema
+        run: psql "$DATABASE_URL" -f db/supabase/000_init.sql
+      - run: npm test -- --passWithNoTests
+      - run: npm run build
