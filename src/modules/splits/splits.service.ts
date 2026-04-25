@@ -11,9 +11,19 @@ export class SplitsService {
   constructor(@Inject(DRIZZLE) private readonly db: Drizzle) {}
 
   /**
-   * List the user's splits with participant counts.
-   * Counts are computed in a single tenant-scoped GROUP BY query —
-   * never aggregates across other users.
+   * List the user's splits with full participant arrays embedded.
+   *
+   * Cost: 2 round-trips (splits + participants IN-list), not N+1.
+   * Participants are grouped client-side.
+   *
+   * Backwards-compat: legacy `participantCount` and `paidCount` aggregates
+   * are still returned (computed from the embedded participants) so old
+   * Flutter consumers keep working unchanged.
+   *
+   * Tenant scoping: the participant IN-list is constructed from split
+   * ids that already passed `splits.owner_user_id = userId`, so we never
+   * leak participants across tenants. RLS on `split_participants`
+   * provides defense-in-depth.
    */
   async list(userId: string) {
     const rows = await this.db
@@ -25,23 +35,34 @@ export class SplitsService {
     if (rows.length === 0) return [];
 
     const ids = rows.map((r) => r.id);
-    const counts = await this.db
-      .select({
-        splitId: splitParticipants.splitId,
-        total: sql<number>`COUNT(*)::int`,
-        paid: sql<number>`SUM(CASE WHEN ${splitParticipants.paid} THEN 1 ELSE 0 END)::int`,
-      })
+    const participants = await this.db
+      .select()
       .from(splitParticipants)
       .where(inArray(splitParticipants.splitId, ids))
-      .groupBy(splitParticipants.splitId);
+      .orderBy(splitParticipants.createdAt);
 
-    const map = new Map(counts.map((c) => [c.splitId, c]));
+    type Participant = (typeof participants)[number];
+    const byId = new Map<
+      string,
+      { participants: Participant[]; paidCount: number }
+    >();
+    for (const id of ids) {
+      byId.set(id, { participants: [], paidCount: 0 });
+    }
+    for (const p of participants) {
+      const bucket = byId.get(p.splitId);
+      if (!bucket) continue; // defense-in-depth: drop orphan rows
+      bucket.participants.push(p);
+      if (p.paid) bucket.paidCount += 1;
+    }
+
     return rows.map((r) => {
-      const c = map.get(r.id);
+      const bucket = byId.get(r.id);
       return {
         ...r,
-        participantCount: c ? Number(c.total) : 0,
-        paidCount: c ? Number(c.paid) : 0,
+        participants: bucket?.participants ?? [],
+        participantCount: bucket?.participants.length ?? 0,
+        paidCount: bucket?.paidCount ?? 0,
       };
     });
   }

@@ -10,9 +10,43 @@ import { CreateBudgetDto, UpdateBudgetDto } from './dto/budget.dto';
 export class BudgetsService {
   constructor(@Inject(DRIZZLE) private readonly db: Drizzle) {}
 
+  /**
+   * List active budgets enriched with `spent_minor` for the current
+   * period. Uses a single correlated subquery per row (one indexed sum
+   * each) — not N+1 round-trips.
+   *
+   * `spent_minor` aggregation rules (mirrors `getWithSpend()`):
+   *   • debits only (credits = income, ignored)
+   *   • category match against `budgets.category`
+   *   • booked_at >= budgets.starts_on (the period anchor)
+   *   • booked_at <= now()
+   *   • tenant-scoped via budgets.user_id = transactions.user_id
+   *     (defense-in-depth on top of RLS)
+   */
   list(userId: string) {
     return this.db
-      .select()
+      .select({
+        id: budgets.id,
+        userId: budgets.userId,
+        category: budgets.category,
+        currency: budgets.currency,
+        limitMinor: budgets.limitMinor,
+        period: budgets.period,
+        rolloverEnabled: budgets.rolloverEnabled,
+        alertThresholdPercent: budgets.alertThresholdPercent,
+        startsOn: budgets.startsOn,
+        isArchived: budgets.isArchived,
+        createdAt: budgets.createdAt,
+        spentMinor: sql<number>`COALESCE((
+          SELECT SUM(${transactions.amountMinor})::int
+          FROM ${transactions}
+          WHERE ${transactions.userId} = ${budgets.userId}
+            AND ${transactions.category} = ${budgets.category}
+            AND ${transactions.direction} = 'debit'
+            AND ${transactions.bookedAt} >= ${budgets.startsOn}
+            AND ${transactions.bookedAt} <= NOW()
+        ), 0)::int`.as('spent_minor'),
+      })
       .from(budgets)
       .where(and(eq(budgets.userId, userId), eq(budgets.isArchived, false)))
       .orderBy(desc(budgets.createdAt));
