@@ -26,6 +26,8 @@ import { InvestmentsModule } from './modules/investments/investments.module';
 import { InsightsModule } from './modules/insights/insights.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
+import { OnboardingModule } from './modules/onboarding/onboarding.module';
+import { SmsVerificationModule } from './modules/sms-verification/sms-verification.module';
 
 @Module({
   imports: [
@@ -71,6 +73,8 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
     InsightsModule,
     NotificationsModule,
     AnalyticsModule,
+    OnboardingModule,
+    SmsVerificationModule,
   ],
   providers: [
     {
