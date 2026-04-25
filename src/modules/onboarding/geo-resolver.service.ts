@@ -13,7 +13,7 @@ import { ConfigService } from '@nestjs/config';
  * needed when MaxMind license arrives; just set GEOIP_DB_PATH.
  */
 export interface GeoResolveResult {
-  country: string | null;       // ISO-3166 alpha-2
+  country: string | null; // ISO-3166 alpha-2
   currency: string | null;
   dialCode: string | null;
   confidence: 'high' | 'medium' | 'low' | 'unknown';
@@ -28,10 +28,7 @@ export class GeoResolverService {
 
   // Static minimal mapping for ISO2 → currency + dial. Stage 7 cleanup
   // can pull this from `regions` table for full coverage.
-  private static readonly COUNTRY_META: Record<
-    string,
-    { currency: string; dialCode: string }
-  > = {
+  private static readonly COUNTRY_META: Record<string, { currency: string; dialCode: string }> = {
     PK: { currency: 'PKR', dialCode: '+92' },
     IN: { currency: 'INR', dialCode: '+91' },
     BD: { currency: 'BDT', dialCode: '+880' },
@@ -52,9 +49,7 @@ export class GeoResolverService {
       this.logger.log(`GeoResolver = MaxMind (${this.maxmindPath})`);
     } else if (this.ipinfoToken !== undefined) {
       this.mode = 'ipinfo';
-      this.logger.log(
-        `GeoResolver = ipinfo${this.ipinfoToken ? ' (with token)' : ' (free tier)'}`,
-      );
+      this.logger.log(`GeoResolver = ipinfo${this.ipinfoToken ? ' (with token)' : ' (free tier)'}`);
     } else {
       this.mode = 'disabled';
       this.logger.log(
@@ -79,9 +74,7 @@ export class GeoResolverService {
         country = await this.resolveIpinfo(cleanIp);
       }
     } catch (err) {
-      this.logger.warn(
-        `Geo resolve failed: ${err instanceof Error ? err.message : err}`,
-      );
+      this.logger.warn(`Geo resolve failed: ${err instanceof Error ? err.message : err}`);
     }
 
     if (!country) return this.empty('unknown');
@@ -102,16 +95,18 @@ export class GeoResolverService {
   private async resolveMaxmind(ip: string): Promise<string | null> {
     if (!this.maxmindPath) return null;
     if (!this.maxmindReader) {
-      // Lazy import — `@maxmind/geoip2-node` is an optional dep; if not
-      // installed, fall through to ipinfo.
+      // Lazy require — `@maxmind/geoip2-node` is an optional peer dep
+      // that may not be installed in dev/test. We use Function-constructor
+      // require so TypeScript doesn't try to resolve it at compile time.
       try {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const mod = require('@maxmind/geoip2-node');
+        // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-require-imports
+        const dynamicRequire: NodeRequire = eval('require');
+        const mod = dynamicRequire('@maxmind/geoip2-node') as {
+          Reader: { open: (path: string) => Promise<unknown> };
+        };
         this.maxmindReader = await mod.Reader.open(this.maxmindPath);
       } catch (err) {
-        this.logger.warn(
-          'MaxMind module not installed or DB file not openable; falling back.',
-        );
+        this.logger.warn('MaxMind module not installed or DB file not openable; falling back.');
         return null;
       }
     }
