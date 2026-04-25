@@ -4,13 +4,35 @@ import { ApiBearerAuth, ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { RequestUser } from '@/common/types/request-user';
 
+import { CoachRulesService } from './coach-rules.service';
 import { CoachService } from './coach.service';
 
 @ApiTags('coach')
 @ApiBearerAuth()
 @Controller('coach')
 export class CoachController {
-  constructor(private readonly svc: CoachService) {}
+  constructor(
+    private readonly svc: CoachService,
+    private readonly rules: CoachRulesService,
+  ) {}
+
+  @Post('ask')
+  @ApiBody({
+    schema: { type: 'object', properties: { prompt: { type: 'string' } } },
+  })
+  @ApiOperation({
+    summary:
+      "Ask the Coach a question — answered by the rule engine using the user's real data (no LLM in Phase 1)",
+  })
+  async ask(@CurrentUser() user: RequestUser, @Body() body: { prompt: string }) {
+    const prompt = (body.prompt ?? '').trim();
+    if (!prompt) {
+      return this.rules.answer(user.id, '');
+    }
+    // Best-effort: also bump the daily query counter for rate-limit visibility.
+    await this.svc.incrementDailyQuery(user.id).catch(() => {});
+    return this.rules.answer(user.id, prompt);
+  }
 
   @Get('conversations')
   @ApiOperation({ summary: 'List Coach conversations' })
