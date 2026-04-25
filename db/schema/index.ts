@@ -324,9 +324,10 @@ export const mfaSecrets = pgTable('mfa_secrets', {
     .unique()
     .notNull()
     .references(() => profiles.id, { onDelete: 'cascade' }),
-  secret: text('secret').notNull(),
+  secret: text('secret').notNull(), // app-encrypted (AES-256-GCM)
   verified: boolean('verified').notNull().default(false),
-  recoveryCodes: jsonb('recovery_codes').notNull().default([]),
+  recoveryCodes: jsonb('recovery_codes').notNull().default([]), // hashed (PBKDF2)
+  lastUsedStep: bigint('last_used_step', { mode: 'number' }), // RFC 6238 replay guard
   enabledAt: timestamp('enabled_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
