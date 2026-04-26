@@ -3,6 +3,8 @@ import { sql } from 'drizzle-orm';
 
 import { Drizzle, DRIZZLE } from '@/common/db/db.module';
 
+import { CorridorPolicyService } from './corridor-policy.service';
+
 /**
  * **E7 — Phase 7 personalization orchestrator.**
  *
@@ -76,7 +78,10 @@ interface RawState extends Record<string, unknown> {
 export class CompleteService {
   private readonly logger = new Logger(CompleteService.name);
 
-  constructor(@Inject(DRIZZLE) private readonly db: Drizzle) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Drizzle,
+    private readonly corridorPolicy: CorridorPolicyService,
+  ) {}
 
   async complete(userId: string): Promise<CompleteResult> {
     const started = Date.now();
@@ -119,13 +124,31 @@ export class CompleteService {
       tick('accounts', accountCardIds.length ? 'ok' : 'skipped', t4);
 
       // FR-7.0.5 — Corridors
+      // QA Bug 6 — server-side compliance enforcement. Even if the
+      // client wrote a sanctioned/blocked corridor into state (older
+      // app version, race with sanctions update, malicious client),
+      // we re-validate against `country_corridors` here and silently
+      // drop disallowed pairs. Compliance audit trail logs each drop.
       const t5 = Date.now();
-      const corridorIds = await this.insertCorridors(
-        tx,
-        userId,
-        stateRow.sends_to ?? [],
-        stateRow.receives_from ?? [],
+      const primary = stateRow.primary_region ?? '';
+      const sendsAllowed = primary
+        ? await this.corridorPolicy.allowedSecondaries(primary, stateRow.sends_to ?? [])
+        : (stateRow.sends_to ?? []);
+      const receivesAllowed = primary
+        ? await this.corridorPolicy.allowedSecondaries(primary, stateRow.receives_from ?? [])
+        : (stateRow.receives_from ?? []);
+      const droppedSends = (stateRow.sends_to ?? []).filter((r) => !sendsAllowed.includes(r));
+      const droppedReceives = (stateRow.receives_from ?? []).filter(
+        (r) => !receivesAllowed.includes(r),
       );
+      if (droppedSends.length || droppedReceives.length) {
+        this.logger.warn(
+          `corridor_policy_drop user=${userId} primary=${primary} ` +
+            `dropped_sends=${droppedSends.join(',')} ` +
+            `dropped_receives=${droppedReceives.join(',')}`,
+        );
+      }
+      const corridorIds = await this.insertCorridors(tx, userId, sendsAllowed, receivesAllowed);
       tick('corridors', corridorIds.length ? 'ok' : 'skipped', t5);
 
       // FR-7.0.6 — Dashboard widgets per persona
@@ -193,10 +216,22 @@ export class CompleteService {
     return (rows as unknown as RawState[])[0] ?? null;
   }
 
-  private async upsertProfile(
-    tx: Drizzle,
-    s: RawState,
-  ): Promise<string> {
+  /**
+   * QA Bug 7 fix — Drizzle's `${jsArray}` interpolation serializes JS
+   * arrays as JSON text (e.g. `["PK","CA"]`), not as a Postgres text[]
+   * literal (`{PK,CA}`). When the destination column is `text[]`, that
+   * coercion fails on NULL/empty cases and ends up writing JSON-as-string
+   * rows. Use this helper to bind into a proper `ARRAY[...]::text[]`.
+   *
+   * Empty arrays render as `ARRAY[]::text[]` which Postgres accepts.
+   */
+  private textArray(values: string[]) {
+    if (values.length === 0) return sql`ARRAY[]::text[]`;
+    const params = values.map((v) => sql`${v}`);
+    return sql`ARRAY[${sql.join(params, sql`, `)}]::text[]`;
+  }
+
+  private async upsertProfile(tx: Drizzle, s: RawState): Promise<string> {
     const result = await tx.execute<{ id: string }>(sql`
       INSERT INTO public.profiles
         (user_id, name, primary_region, secondary_regions,
@@ -205,11 +240,11 @@ export class CompleteService {
         ${s.user_id},
         ${s.name},
         ${s.primary_region},
-        ${s.secondary_regions ?? []},
+        ${this.textArray(s.secondary_regions ?? [])},
         ${s.budget_currency},
-        ${s.earning_types ?? []},
+        ${this.textArray(s.earning_types ?? [])},
         ${s.invests ?? false},
-        ${s.investment_types ?? []},
+        ${this.textArray(s.investment_types ?? [])},
         NOW()
       )
       ON CONFLICT (user_id) DO UPDATE SET

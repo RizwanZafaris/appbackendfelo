@@ -68,23 +68,39 @@ export class OtpAttemptService {
   /**
    * Record a failed verification. Returns the updated state. If this
    * call pushed `fail_count` to MAX_ATTEMPTS, the cooldown is set.
+   *
+   * **QA Bug 3 fix** — once `cooldown_until` is in the future, a new
+   * failed attempt no longer refreshes it. Without this guard, a user
+   * who keeps trying during lockout would extend the lockout
+   * indefinitely (every attempt += 30 min).
+   *
+   * **QA Bug 4 fix** — `ON CONFLICT (identity, channel)` now respects
+   * the channel column so the same string used as both email and
+   * phone identity gets two separate counters. Schema PK was widened
+   * in migration 008 (see follow-up `009_otp_pk_widen.sql`).
    */
   async recordFailure(identity: string, channel: 'sms' | 'email'): Promise<OtpRateLimitState> {
     const norm = this.normalize(identity);
-    // Atomic upsert with conditional cooldown set.
     const rows = await this.db.execute<{
       fail_count: number;
       cooldown_until: Date | null;
     }>(sql`
       INSERT INTO public.otp_attempts (identity, channel, fail_count, last_attempt_at)
       VALUES (${norm}, ${channel}, 1, NOW())
-      ON CONFLICT (identity) DO UPDATE SET
+      ON CONFLICT (identity, channel) DO UPDATE SET
         fail_count      = public.otp_attempts.fail_count + 1,
         last_attempt_at = NOW(),
         cooldown_until  = CASE
+          -- Already in active cooldown? Preserve the original timer
+          -- so retries during lockout do NOT extend it.
+          WHEN public.otp_attempts.cooldown_until IS NOT NULL
+               AND public.otp_attempts.cooldown_until > NOW()
+            THEN public.otp_attempts.cooldown_until
+          -- Crossing the 3-fail threshold (fresh) → set the cooldown.
           WHEN public.otp_attempts.fail_count + 1 >= ${this.MAX_ATTEMPTS}
             THEN NOW() + (${this.COOLDOWN_MS} || ' milliseconds')::INTERVAL
-          ELSE public.otp_attempts.cooldown_until
+          -- Below threshold or cooldown expired → no cooldown.
+          ELSE NULL
         END
       RETURNING fail_count, cooldown_until
     `);

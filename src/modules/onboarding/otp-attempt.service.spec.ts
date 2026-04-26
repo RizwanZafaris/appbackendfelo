@@ -46,8 +46,18 @@ describe('OtpAttemptService', () => {
       if (sqlText.includes('INSERT')) {
         const existing = store.get(identity);
         const fail = (existing?.fail_count ?? 0) + 1;
-        const cd =
-          fail >= 3 ? new Date(Date.now() + 30 * 60 * 1000) : (existing?.cooldown_until ?? null);
+        // Mirror the QA Bug 3 fix logic: preserve existing cooldown
+        // if it's still in the future, otherwise set a new one when
+        // crossing the threshold for the first time.
+        const now = Date.now();
+        let cd: Date | null;
+        if (existing?.cooldown_until && existing.cooldown_until.getTime() > now) {
+          cd = existing.cooldown_until;
+        } else if (fail >= 3) {
+          cd = new Date(now + 30 * 60 * 1000);
+        } else {
+          cd = null;
+        }
         const row = { fail_count: fail, cooldown_until: cd };
         store.set(identity, row);
         return Promise.resolve([row]);
@@ -114,5 +124,20 @@ describe('OtpAttemptService', () => {
     await service.recordFailure('923001234567', 'sms');
     const s = await service.checkState('+92 300-1234567', 'sms');
     expect(s.failCount).toBe(1);
+  });
+
+  // QA Bug 3 — once cooldown is set, additional failures must not
+  // refresh the timer. Otherwise a user who keeps trying during
+  // lockout extends it indefinitely.
+  it('does NOT refresh cooldown on attempts during active lockout (QA Bug 3)', async () => {
+    await service.recordFailure('+923001234567', 'sms');
+    await service.recordFailure('+923001234567', 'sms');
+    const s3 = await service.recordFailure('+923001234567', 'sms');
+    const initialCooldown = s3.cooldownUntil!.getTime();
+
+    // Simulate user trying again during cooldown
+    await new Promise((r) => setTimeout(r, 50));
+    const s4 = await service.recordFailure('+923001234567', 'sms');
+    expect(s4.cooldownUntil!.getTime()).toBe(initialCooldown);
   });
 });
