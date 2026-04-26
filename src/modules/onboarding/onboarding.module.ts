@@ -4,10 +4,12 @@ import { ConfigModule } from '@nestjs/config';
 import { DbModule } from '@/common/db/db.module';
 
 import { CompleteService } from './complete.service';
+import { CorridorPolicyService } from './corridor-policy.service';
 import { GeoResolverService } from './geo-resolver.service';
 import { JourneyConfigService } from './journey-config.service';
 import { OnboardingController } from './onboarding.controller';
 import { OnboardingStateService } from './onboarding-state.service';
+import { OtpAttemptService } from './otp-attempt.service';
 
 /**
  * Onboarding v2 module.
@@ -32,12 +34,16 @@ import { OnboardingStateService } from './onboarding-state.service';
     JourneyConfigService,
     GeoResolverService,
     CompleteService,
+    CorridorPolicyService,
+    OtpAttemptService,
   ],
   exports: [
     OnboardingStateService,
     JourneyConfigService,
     GeoResolverService,
     CompleteService,
+    CorridorPolicyService,
+    OtpAttemptService,
   ],
 })
 export class OnboardingModule {}

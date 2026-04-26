@@ -3,6 +3,8 @@ import { sql } from 'drizzle-orm';
 
 import { Drizzle, DRIZZLE } from '@/common/db/db.module';
 
+import { CorridorPolicyService } from './corridor-policy.service';
+
 /**
  * Returns the entire DB-driven content payload that the Flutter app needs
  * to render every onboarding screen — per D-029.
@@ -21,6 +23,22 @@ export interface JourneyConfigPayload {
     dial_code: string;
     is_primary_market: boolean;
     is_diaspora_corridor: boolean;
+    /**
+     * Audit §4 — country status for picker filtering.
+     * 'active' | 'coming_soon' | 'not_supported' | 'sanctioned'.
+     */
+    country_status: string;
+  }>;
+  /**
+   * Audit §4 — pair-level corridor policy. Compliance-owned.
+   * Flutter uses this to filter "Send to" / "Receive from" pickers
+   * so PK→IN, PK→IL never appear.
+   */
+  country_corridors: Array<{
+    from: string;
+    to: string;
+    status: 'allowed' | 'blocked' | 'coming_soon' | 'sanctioned';
+    reason: string | null;
   }>;
   banks_by_region: Record<string, Array<{ slug: string; name: string }>>;
   wallets_by_region: Record<
@@ -84,7 +102,10 @@ export class JourneyConfigService {
   private cached: { payload: JourneyConfigPayload; loadedAt: number } | null = null;
   private readonly CACHE_TTL_MS = 5 * 60 * 1000;
 
-  constructor(@Inject(DRIZZLE) private readonly db: Drizzle) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Drizzle,
+    private readonly corridors: CorridorPolicyService,
+  ) {}
 
   async getPayload(locale = 'en'): Promise<JourneyConfigPayload> {
     if (
@@ -115,7 +136,7 @@ export class JourneyConfigService {
     ] = await Promise.all([
       this.db.execute(sql`SELECT current_version FROM public.journey_config_versions WHERE id = 1`),
       this.db.execute(
-        sql`SELECT iso2, name, currency_iso, dial_code, is_primary_market, is_diaspora_corridor
+        sql`SELECT iso2, name, currency_iso, dial_code, is_primary_market, is_diaspora_corridor, country_status
             FROM public.regions ORDER BY display_order`,
       ),
       this.db.execute(
@@ -173,8 +194,10 @@ export class JourneyConfigService {
           dial_code: string;
           is_primary_market: boolean;
           is_diaspora_corridor: boolean;
+          country_status: string;
         }>
       ).map((r) => r),
+      country_corridors: await this.corridors.listAll(),
       banks_by_region: this.groupBy(
         banks as unknown as Array<{
           region_iso2: string;
