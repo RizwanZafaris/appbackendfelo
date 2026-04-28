@@ -20,9 +20,11 @@ export class GeminiProvider implements LlmProvider {
     const apiKey = this.cfg.get<string>('GEMINI_API_KEY');
     if (!apiKey) throw new Error('GEMINI_API_KEY not configured');
 
-    const url =
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(req.model)}:generateContent` +
-      `?key=${encodeURIComponent(apiKey)}`;
+    // Send key via header, not URL query string, so it doesn't end up in
+    // server access logs, browser history, referrer headers, or proxy logs.
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+      req.model,
+    )}:generateContent`;
 
     const body = {
       systemInstruction: { parts: [{ text: req.systemPrompt }] },
@@ -35,7 +37,10 @@ export class GeminiProvider implements LlmProvider {
 
     const r = await fetch(url, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: {
+        'content-type': 'application/json',
+        'x-goog-api-key': apiKey,
+      },
       body: JSON.stringify(body),
     });
     if (!r.ok) {

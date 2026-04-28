@@ -44,6 +44,65 @@ export class CoachQuotaService {
     return { tier, used, limit, remaining: Math.max(0, limit - used), yearMonth: ym };
   }
 
+  /**
+   * Atomically reserve one quota slot. Increments the daily counter and
+   * returns the new monthly total in a single transaction so two concurrent
+   * requests can't both pass the check at remaining=1 and overshoot.
+   *
+   * If the new total is over the limit, the increment is rolled back via
+   * the transaction so the user isn't charged for a request we're rejecting.
+   */
+  async tryReserve(
+    userId: string,
+    tier: CoachContext['tier'],
+  ): Promise<QuotaInfo & { reserved: boolean }> {
+    const { start, end, ym } = this.monthBounds();
+    const limit = TIER_LIMITS[tier];
+    const today = new Date().toISOString().slice(0, 10);
+
+    return this.db.transaction(async (tx) => {
+      // Insert-or-bump today's row (atomic).
+      await tx
+        .insert(coachQueries)
+        .values({ userId, queryDate: today, queryCount: 1 })
+        .onConflictDoUpdate({
+          target: [coachQueries.userId, coachQueries.queryDate],
+          set: { queryCount: sql`${coachQueries.queryCount} + 1` },
+        });
+
+      // Re-sum the month under the same transaction.
+      const row = await tx
+        .select({ total: sql<number>`COALESCE(SUM(${coachQueries.queryCount}), 0)::int` })
+        .from(coachQueries)
+        .where(and(eq(coachQueries.userId, userId), between(coachQueries.queryDate, start, end)));
+      const used = Number(row[0]?.total ?? 0);
+
+      if (used > limit) {
+        // Refund — we overshot the cap because of a race.
+        await tx
+          .update(coachQueries)
+          .set({ queryCount: sql`GREATEST(${coachQueries.queryCount} - 1, 0)` })
+          .where(and(eq(coachQueries.userId, userId), eq(coachQueries.queryDate, today)));
+        return {
+          tier,
+          used: used - 1,
+          limit,
+          remaining: 0,
+          yearMonth: ym,
+          reserved: false,
+        };
+      }
+      return {
+        tier,
+        used,
+        limit,
+        remaining: Math.max(0, limit - used),
+        yearMonth: ym,
+        reserved: true,
+      };
+    });
+  }
+
   private monthBounds(): { start: string; end: string; ym: string } {
     const now = new Date();
     const y = now.getUTCFullYear();

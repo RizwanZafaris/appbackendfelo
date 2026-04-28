@@ -137,6 +137,6 @@ export class GuardrailsService {
       nums.push(Math.trunc(g.currentMinor / 100));
     }
     for (const b of ctx.bills) nums.push(Math.trunc(b.amountMinor / 100));
-    return nums.filter((n) => n >= 100);
+    return nums.filter((n) => Number.isFinite(n) && n >= 100);
   }
 }
