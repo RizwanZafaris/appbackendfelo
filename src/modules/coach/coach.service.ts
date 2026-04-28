@@ -33,6 +33,27 @@ export class CoachService {
     return inserted[0];
   }
 
+  /** Returns the message history for a conversation, ready to feed into an LLM. */
+  async getMessagesForLlm(
+    userId: string,
+    id: string,
+  ): Promise<Array<{ role: 'user' | 'assistant'; content: string }>> {
+    const row = await this.getConversation(userId, id);
+    const messages = (row as { messages: unknown }).messages;
+    if (!Array.isArray(messages)) return [];
+    return messages
+      .filter(
+        (m): m is { role: 'user' | 'assistant'; content: string } =>
+          typeof m === 'object' &&
+          m !== null &&
+          'role' in m &&
+          (m.role === 'user' || m.role === 'assistant') &&
+          'content' in m &&
+          typeof (m as { content: unknown }).content === 'string',
+      )
+      .map((m) => ({ role: m.role, content: m.content }));
+  }
+
   async appendMessage(userId: string, id: string, message: unknown) {
     const updated = await this.db
       .update(coachConversations)
