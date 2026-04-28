@@ -1,0 +1,14 @@
+node_modules/
+dist/
+build/
+coverage/
+.next/
+.turbo/
+graphify-out/
+**/*.lock
+**/*.lockb
+package-lock.json
+*.generated.ts
+*.d.ts
+.env
+.env.*
