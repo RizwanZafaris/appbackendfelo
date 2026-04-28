@@ -87,8 +87,23 @@ export class CoachController {
       model,
     });
 
-    // 4. Persist + deduct quota only on success.
+    // 4. Persist + atomically reserve quota only on success. Guardrail
+    //    refusals (consumesQuota=false) skip both — this is what makes
+    //    the contract "a refused call never costs you a slot" hold even
+    //    under concurrent traffic.
+    let reservation = q;
     if (out.consumesQuota) {
+      const reserved = await this.quota.tryReserve(user.id, ctx.tier);
+      if (!reserved.reserved) {
+        // Race: someone else used the last slot between our pre-check and
+        // the LLM call. Don't persist the answer; return 429.
+        throw new HttpException(
+          { error: 'quota_exceeded', message: 'Monthly quota exhausted.', quota: reserved },
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
+      reservation = reserved;
+
       if (!conversationId) {
         const created = await this.svc.createConversation(user.id, [
           { role: 'user', content: body.message.trim() },
@@ -105,10 +120,9 @@ export class CoachController {
           content: out.answer,
         });
       }
-      await this.svc.incrementDailyQuery(user.id);
     }
 
-    const updatedQuota = await this.quota.check(user.id, ctx.tier);
+    const updatedQuota = reservation;
     return {
       conversationId,
       answer: out.answer,

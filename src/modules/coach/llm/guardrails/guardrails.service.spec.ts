@@ -54,6 +54,17 @@ describe('GuardrailsService.post', () => {
   it('ignores year mentions (false-positive guard)', () => {
     expect(g.post('Plan for 2025 looks good.', ctx).triggered).toBe(false);
   });
+
+  it('drops NaN context values so grounding still works on partial profiles', () => {
+    const dirty: CoachContext = {
+      ...ctx,
+      monthlyIncomeMinor: Number.NaN,
+      savingsMinor: Number.NaN,
+    };
+    const allowed = g.contextNumbers(dirty);
+    expect(allowed.every((n) => Number.isFinite(n))).toBe(true);
+    expect(allowed).toContain(80_000);
+  });
 });
 
 describe('GuardrailsService.pre', () => {

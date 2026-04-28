@@ -87,11 +87,27 @@ export class LlmCoachService {
       { role: 'user' as const, content: input.message },
     ];
 
-    const result = await provider.complete({
-      systemPrompt: system,
-      messages,
-      model: input.model,
-    });
+    let result;
+    try {
+      result = await provider.complete({
+        systemPrompt: system,
+        messages,
+        model: input.model,
+      });
+    } catch (e) {
+      // Provider outage / 429 / 5xx — return a safe fallback rather than
+      // 500-ing on the user. Quota is NOT consumed (consumesQuota=false).
+      this.log.warn(`provider ${input.provider} failed: ${(e as Error).message}`);
+      return {
+        answer: SAFE_FALLBACK,
+        sources: [],
+        guardrailTriggered: true,
+        tokensUsed: 0,
+        costUsd: 0,
+        promptVersion: COACH_PROMPT_VERSION,
+        consumesQuota: false,
+      };
+    }
 
     // ---------- Layer 3: post-guardrail ------------------------------
     const post = this.guardrails.post(result.text, ctx);

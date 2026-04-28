@@ -11,6 +11,18 @@ const GOAL_LIMIT = 5;
 const BILL_LIMIT = 8;
 
 /**
+ * Coerce any DB-shaped value to a finite non-negative integer of minor
+ * units. Strings, NaN, Infinity, and negatives all collapse to 0 so they
+ * can never propagate into the guardrail's grounding set as `NaN` (which
+ * would silently disable number-grounding for that user).
+ */
+function safeInt(v: unknown): number {
+  const n = typeof v === 'number' ? v : Number(v ?? 0);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.trunc(n);
+}
+
+/**
  * Builds a CoachContext from the user's real Drizzle data. Intentionally
  * tolerant — if any single sub-query fails (or the user has no goals,
  * etc.), we return what we have rather than 500. The LLM will say "I
@@ -39,9 +51,9 @@ export class RetrievalService {
       tier,
       corridor,
       currency,
-      monthlyIncomeMinor: Math.trunc(Number(profile?.monthlyIncomeMinor ?? 0)),
-      monthlySpendMinor: monthSpend,
-      savingsMinor: Math.trunc(Number(profile?.savingsMinor ?? 0)),
+      monthlyIncomeMinor: safeInt(profile?.monthlyIncomeMinor),
+      monthlySpendMinor: safeInt(monthSpend),
+      savingsMinor: safeInt(profile?.savingsMinor),
       recentTransactions: recentTx,
       goals: userGoals,
       bills,
@@ -102,7 +114,7 @@ export class RetrievalService {
             gte(transactions.bookedAt, start),
           ),
         );
-      return Math.trunc(Number(row[0]?.total ?? 0));
+      return safeInt(row[0]?.total);
     } catch {
       return 0;
     }
@@ -125,7 +137,7 @@ export class RetrievalService {
         date: new Date(r.bookedAt as unknown as string).toISOString().slice(0, 10),
         category: r.category,
         merchant: r.merchant,
-        amountMinor: Math.trunc(Number(r.amountMinor)),
+        amountMinor: safeInt(r.amountMinor),
       }));
     } catch {
       return [];
@@ -143,8 +155,8 @@ export class RetrievalService {
         const r = g as unknown as Record<string, unknown>;
         return {
           name: String(r.name ?? r.title ?? 'goal'),
-          targetMinor: Math.trunc(Number(r.targetMinor ?? r.amountMinor ?? 0)),
-          currentMinor: Math.trunc(Number(r.currentMinor ?? r.savedMinor ?? 0)),
+          targetMinor: safeInt(r.targetMinor ?? r.amountMinor),
+          currentMinor: safeInt(r.currentMinor ?? r.savedMinor),
           deadline:
             typeof r.deadline === 'string'
               ? r.deadline
@@ -169,7 +181,7 @@ export class RetrievalService {
         const r = b as unknown as Record<string, unknown>;
         return {
           name: String(r.name ?? r.label ?? 'bill'),
-          amountMinor: Math.trunc(Number(r.amountMinor ?? 0)),
+          amountMinor: safeInt(r.amountMinor),
           dueDay: typeof r.dueDay === 'number' ? r.dueDay : 1,
           paidThisMonth: Boolean(r.paidThisMonth ?? false),
         };
