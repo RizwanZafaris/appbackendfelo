@@ -474,3 +474,140 @@ export type FamilyGroup = typeof familyGroups.$inferSelect;
 export type FamilyMember = typeof familyMembers.$inferSelect;
 export type Notification = typeof notifications.$inferSelect;
 export type Device = typeof devices.$inferSelect;
+
+// -- F012 — Cash Envelopes (Pakistan cash-heavy tracking) ---------------
+export const cashEnvelopes = pgTable(
+  'cash_envelopes',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => profiles.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    category: text('category').notNull(),
+    currency: char('currency', { length: 3 }).notNull().default('PKR'),
+    budgetMinor: bigint('budget_minor', { mode: 'number' }).notNull().default(0),
+    spentMinor: bigint('spent_minor', { mode: 'number' }).notNull().default(0),
+    period: text('period', { enum: ['weekly', 'monthly'] })
+      .notNull()
+      .default('monthly'),
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({ userIdx: index('idx_cash_env_user').on(t.userId) }),
+);
+
+// -- F013 — Remittance Notebook (manual transfer logging) ---------------
+export const remittanceNotebookEntries = pgTable(
+  'remittance_notebook_entries',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => profiles.id, { onDelete: 'cascade' }),
+    recipientName: text('recipient_name').notNull(),
+    recipientCountry: text('recipient_country').notNull().default('PK'),
+    relationship: text('relationship'),
+    provider: text('provider').notNull(),
+    sourceCurrency: char('source_currency', { length: 3 }).notNull(),
+    targetCurrency: char('target_currency', { length: 3 }).notNull().default('PKR'),
+    sourceAmountMinor: bigint('source_amount_minor', { mode: 'number' }).notNull(),
+    targetAmountMinor: bigint('target_amount_minor', { mode: 'number' }),
+    feeMinor: bigint('fee_minor', { mode: 'number' }),
+    fxRate: numeric('fx_rate', { precision: 10, scale: 4 }),
+    deliveryMethod: text('delivery_method'),
+    deliveryTime: text('delivery_time'),
+    status: text('status', {
+      enum: ['planned', 'sent', 'received', 'cancelled'],
+    })
+      .notNull()
+      .default('planned'),
+    plannedDate: date('planned_date'),
+    sentAt: timestamp('sent_at', { withTimezone: true }),
+    receivedAt: timestamp('received_at', { withTimezone: true }),
+    confirmationMethod: text('confirmation_method'),
+    notes: text('notes'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    userIdx: index('idx_rem_notebook_user').on(t.userId),
+    userStatusIdx: index('idx_rem_notebook_status').on(t.userId, t.status),
+  }),
+);
+
+// -- F014 — Monthly Closes ("Validate My Month" workflow) ---------------
+export const monthlyCloses = pgTable(
+  'monthly_closes',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => profiles.id, { onDelete: 'cascade' }),
+    year: integer('year').notNull(),
+    month: integer('month').notNull(),
+    status: text('status', { enum: ['open', 'validating', 'locked'] })
+      .notNull()
+      .default('open'),
+    totalIncomeMinor: bigint('total_income_minor', { mode: 'number' }),
+    totalExpenseMinor: bigint('total_expense_minor', { mode: 'number' }),
+    budgetAdherencePercent: integer('budget_adherence_percent'),
+    goalProgressSummary: jsonb('goal_progress_summary').notNull().default({}),
+    validationChecklist: jsonb('validation_checklist').notNull().default([]),
+    aiSummary: text('ai_summary'),
+    closedAt: timestamp('closed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    userMonthUnique: uniqueIndex('idx_monthly_close_unique').on(t.userId, t.year, t.month),
+    userIdx: index('idx_monthly_close_user').on(t.userId, t.year, t.month),
+  }),
+);
+
+// -- F015 — User Data Exports (GDPR/portability) ------------------------
+export const userExports = pgTable('user_exports', {
+  id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => profiles.id, { onDelete: 'cascade' }),
+  format: text('format', { enum: ['json', 'csv'] }).notNull(),
+  status: text('status', {
+    enum: ['pending', 'processing', 'ready', 'expired'],
+  })
+    .notNull()
+    .default('pending'),
+  filePath: text('file_path'),
+  expiresAt: timestamp('expires_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+});
+
+// -- F016 — Subscription Usage (quota tracking) -------------------------
+export const subscriptionUsage = pgTable(
+  'subscription_usage',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => profiles.id, { onDelete: 'cascade' }),
+    usageDate: date('usage_date').notNull(),
+    expenseCount: integer('expense_count').notNull().default(0),
+    aiQueryCount: integer('ai_query_count').notNull().default(0),
+    receiptOcrCount: integer('receipt_ocr_count').notNull().default(0),
+  },
+  (t) => ({
+    userDateUnique: uniqueIndex('idx_sub_usage_unique').on(t.userId, t.usageDate),
+  }),
+);
+
+// Type exports for new tables
+export type CashEnvelope = typeof cashEnvelopes.$inferSelect;
+export type NewCashEnvelope = typeof cashEnvelopes.$inferInsert;
+export type RemittanceNotebookEntry = typeof remittanceNotebookEntries.$inferSelect;
+export type NewRemittanceNotebookEntry = typeof remittanceNotebookEntries.$inferInsert;
+export type MonthlyClose = typeof monthlyCloses.$inferSelect;
+export type NewMonthlyClose = typeof monthlyCloses.$inferInsert;
+export type UserExport = typeof userExports.$inferSelect;
+export type SubscriptionUsage = typeof subscriptionUsage.$inferSelect;

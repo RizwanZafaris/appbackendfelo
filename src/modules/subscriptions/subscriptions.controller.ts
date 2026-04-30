@@ -1,26 +1,33 @@
-import { Controller, Get } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-
+import { Controller, Get, Post, Body, Param } from '@nestjs/common';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
-import { RequestUser } from '@/common/types/request-user';
+import { SubscriptionsService, type TierLimits } from './subscriptions.service';
 
-import { SubscriptionsService } from './subscriptions.service';
-
-@ApiTags('subscriptions')
-@ApiBearerAuth()
 @Controller('subscriptions')
 export class SubscriptionsController {
-  constructor(private readonly svc: SubscriptionsService) {}
+  constructor(private readonly service: SubscriptionsService) {}
 
-  @Get()
-  @ApiOperation({ summary: 'List all subscriptions for the user' })
-  list(@CurrentUser() user: RequestUser) {
-    return this.svc.list(user.id);
+  @Get('tier')
+  async getTier(@CurrentUser('sub') userId: string) {
+    const tier = await this.service.getUserTier(userId);
+    const limits = await this.service.getTierLimits(userId);
+    const usage = await this.service.getUsage(userId);
+    return { tier, limits, usage };
   }
 
-  @Get('current')
-  @ApiOperation({ summary: 'Most recent subscription (active or otherwise)' })
-  current(@CurrentUser() user: RequestUser) {
-    return this.svc.current(user.id);
+  @Get('check/:feature')
+  async checkFeature(
+    @CurrentUser('sub') userId: string,
+    @Param('feature') feature: keyof TierLimits,
+  ) {
+    return this.service.checkLimit(userId, feature);
+  }
+
+  @Post('upgrade')
+  async upgrade(
+    @CurrentUser('sub') userId: string,
+    @Body('tier') tier: string,
+  ) {
+    await this.service.upgradeTier(userId, tier);
+    return { upgraded: true, tier };
   }
 }

@@ -28,6 +28,11 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { OnboardingModule } from './modules/onboarding/onboarding.module';
 import { SmsVerificationModule } from './modules/sms-verification/sms-verification.module';
+import { ReportsModule } from './modules/reports/reports.module';
+import { CashEnvelopesModule } from './modules/cash-envelopes/cash-envelopes.module';
+import { RemittanceNotebookModule } from './modules/remittance-notebook/remittance-notebook.module';
+import { MonthlyCloseModule } from './modules/monthly-close/monthly-close.module';
+import { ExportModule } from './modules/export/export.module';
 
 @Module({
   imports: [
@@ -75,6 +80,11 @@ import { SmsVerificationModule } from './modules/sms-verification/sms-verificati
     AnalyticsModule,
     OnboardingModule,
     SmsVerificationModule,
+    ReportsModule,
+    CashEnvelopesModule,
+    RemittanceNotebookModule,
+    MonthlyCloseModule,
+    ExportModule,
   ],
   providers: [
     {
