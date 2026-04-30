@@ -31,7 +31,7 @@ describe('AuditLogService', () => {
     it('inserts audit log entry', async () => {
       const entry = {
         id: 'a1',
-        actorId: 'u1',
+        actorUserId: 'u1',
         entityType: 'transactions',
         operation: 'create' as const,
       };
@@ -44,7 +44,7 @@ describe('AuditLogService', () => {
         after: { id: 't1', amount: 100 },
       });
 
-      expect(result.actorId).toBe('u1');
+      expect(result.actorUserId).toBe('u1');
       expect(mockDb.insert).toHaveBeenCalledWith(auditLogs);
     });
   });

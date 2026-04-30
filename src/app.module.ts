@@ -40,6 +40,8 @@ import { AuditModule } from './modules/audit/audit.module';
 import { LedgerModule } from './modules/ledger/ledger.module';
 import { TreasuryModule } from './modules/treasury/treasury.module';
 import { DisbursementModule } from './modules/remittance/disbursement.module';
+import { AuditLogModule } from './modules/audit-log/audit-log.module';
+import { FamilyModule } from './modules/family/family.module';
 
 @Module({
   imports: [
@@ -105,6 +107,8 @@ import { DisbursementModule } from './modules/remittance/disbursement.module';
     LedgerModule,
     TreasuryModule,
     DisbursementModule,
+    AuditLogModule,
+    FamilyModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

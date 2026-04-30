@@ -44,11 +44,10 @@ export class FamilyService {
 
     // Owner becomes admin
     await this.db.insert(familyMembers).values({
-      familyId: group.id,
+      groupId: group.id,
       userId,
       role: 'admin',
-      canViewSharedTransactions: true,
-      canEditSharedBudgets: true,
+      permissions: { canViewSharedTransactions: true, canEditSharedBudgets: true },
     });
 
     return group;
@@ -56,11 +55,11 @@ export class FamilyService {
 
   async listGroups(userId: string) {
     const memberRows = await this.db
-      .select({ familyId: familyMembers.familyId })
+      .select({ groupId: familyMembers.groupId })
       .from(familyMembers)
       .where(eq(familyMembers.userId, userId));
 
-    const familyIds = memberRows.map((m) => m.familyId);
+    const familyIds = memberRows.map((m) => m.groupId);
     if (familyIds.length === 0) return [];
 
     return this.db
@@ -102,7 +101,7 @@ export class FamilyService {
     return this.db
       .select()
       .from(familyMembers)
-      .where(eq(familyMembers.familyId, groupId));
+      .where(eq(familyMembers.groupId, groupId));
   }
 
   async updateMemberRole(
@@ -115,7 +114,7 @@ export class FamilyService {
     const [updated] = await this.db
       .update(familyMembers)
       .set({ role: dto.role })
-      .where(and(eq(familyMembers.id, memberId), eq(familyMembers.familyId, groupId)))
+      .where(and(eq(familyMembers.id, memberId), eq(familyMembers.groupId, groupId)))
       .returning();
     if (!updated) throw new NotFoundException('Member not found');
     return updated;
@@ -125,7 +124,7 @@ export class FamilyService {
     await this.assertRole(userId, groupId, ['admin']);
     await this.db
       .delete(familyMembers)
-      .where(and(eq(familyMembers.id, memberId), eq(familyMembers.familyId, groupId)));
+      .where(and(eq(familyMembers.id, memberId), eq(familyMembers.groupId, groupId)));
     return { ok: true };
   }
 
@@ -140,10 +139,8 @@ export class FamilyService {
     const [inv] = await this.db
       .insert(familyInvitations)
       .values({
-        familyId: groupId,
-        invitedBy: userId,
-        inviteeEmail: dto.inviteeEmail ?? null,
-        inviteePhone: dto.inviteePhone ?? null,
+        groupId,
+        email: dto.inviteeEmail ?? '',
         code,
         role: dto.role ?? 'member',
         expiresAt,
@@ -169,11 +166,13 @@ export class FamilyService {
       .where(eq(familyInvitations.id, inv.id));
 
     await this.db.insert(familyMembers).values({
-      familyId: inv.familyId,
+      groupId: inv.groupId,
       userId,
       role: inv.role,
-      canViewSharedTransactions: true,
-      canEditSharedBudgets: inv.role === 'admin' || inv.role === 'member',
+      permissions: {
+        canViewSharedTransactions: true,
+        canEditSharedBudgets: inv.role === 'admin' || inv.role === 'member',
+      },
     });
 
     return { ok: true };
@@ -185,11 +184,11 @@ export class FamilyService {
     });
     if (!inv) throw new NotFoundException('Invitation not found');
 
-    await this.assertRole(userId, inv.familyId, ['admin']);
+    await this.assertRole(userId, inv.groupId, ['admin']);
 
     await this.db
       .update(familyInvitations)
-      .set({ status: 'revoked' })
+      .set({ status: 'expired' })
       .where(eq(familyInvitations.id, inv.id));
 
     return { ok: true };
@@ -208,7 +207,7 @@ export class FamilyService {
 
   private async assertMember(userId: string, groupId: string) {
     const row = await this.db.query.familyMembers.findFirst({
-      where: and(eq(familyMembers.familyId, groupId), eq(familyMembers.userId, userId)),
+      where: and(eq(familyMembers.groupId, groupId), eq(familyMembers.userId, userId)),
     });
     if (!row) throw new ForbiddenException('Not a member of this family group');
     return row;

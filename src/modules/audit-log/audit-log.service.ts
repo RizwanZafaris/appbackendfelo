@@ -34,15 +34,14 @@ export class AuditLogService {
     const [row] = await this.db
       .insert(auditLogs)
       .values({
-        actorId: input.actorId,
+        actorUserId: input.actorId,
         entityType: input.entityType,
         entityId: input.entityId ?? null,
         operation: input.operation,
-        before: input.before ?? null,
-        after: input.after ?? null,
+        beforeState: input.before ?? null,
+        afterState: input.after ?? null,
         ipAddress: input.ipAddress ?? null,
         userAgent: input.userAgent ?? null,
-        metadata: input.metadata ?? {},
       })
       .returning();
     return row;
@@ -54,7 +53,7 @@ export class AuditLogService {
   ): Promise<CursorPaginationResult<typeof auditLogs.$inferSelect>> {
     const limit = opts.limit ?? 50;
 
-    const conditions = [eq(auditLogs.actorId, actorId)];
+    const conditions = [eq(auditLogs.actorUserId, actorId)];
     if (opts.cursor) {
       conditions.push(lt(auditLogs.createdAt, new Date(opts.cursor)));
     }
