@@ -10,7 +10,8 @@ import { CreateNotificationDto, RegisterDeviceDto } from './dto/notification.dto
 export class NotificationsService {
   constructor(@Inject(DRIZZLE) private readonly db: Drizzle) {}
 
-  // ---- Notifications ------------------------------------------------
+  // ---- Notifications ----
+
   list(userId: string, opts: { unreadOnly?: boolean } = {}) {
     const where = opts.unreadOnly
       ? and(eq(notifications.userId, userId), isNull(notifications.readAt))
@@ -32,9 +33,6 @@ export class NotificationsService {
         type: dto.type,
         title: dto.title,
         body: dto.body ?? null,
-        // `payload` is the typed contract for the Flutter client. The
-        // Drizzle column has a `'{}'::jsonb` default; only override when
-        // the caller supplies one.
         ...(dto.payload ? { payload: dto.payload } : {}),
       })
       .returning();
@@ -74,17 +72,8 @@ export class NotificationsService {
     return { ok: true };
   }
 
-  // ---- Devices ------------------------------------------------------
-  /**
-   * Idempotent device registration. Backed by the UNIQUE (user_id,
-   * push_token) constraint added in 003_sprint4_hardening.sql —
-   * concurrent calls converge on a single row.
-   *
-   * NOTE: `isTrusted` is intentionally **not** taken from the client
-   * payload. Trust is a server-side decision (e.g., set after MFA
-   * verification on this device); accepting it from the wire would
-   * let a client bypass any future trusted-device 2FA-skip rule.
-   */
+  // ---- Devices ----
+
   async registerDevice(userId: string, dto: RegisterDeviceDto) {
     const [row] = await this.db
       .insert(devices)
@@ -92,7 +81,7 @@ export class NotificationsService {
         userId,
         platform: dto.platform,
         pushToken: dto.pushToken,
-        isTrusted: false, // server-set only
+        isTrusted: false,
       })
       .onConflictDoUpdate({
         target: [devices.userId, devices.pushToken],
@@ -116,5 +105,49 @@ export class NotificationsService {
   async removeDevice(userId: string, id: string) {
     await this.db.delete(devices).where(and(eq(devices.id, id), eq(devices.userId, userId)));
     return { ok: true };
+  }
+
+  // ---- Metrics ----
+
+  async metrics(days = 30) {
+    const totalSent = await this.db
+      .select({ c: sql<number>`COUNT(*)::int` })
+      .from(notifications)
+      .where(
+        sql`${notifications.createdAt} >= NOW() - INTERVAL '${sql.raw(String(days))} days'`,
+      );
+
+    const totalRead = await this.db
+      .select({ c: sql<number>`COUNT(*)::int` })
+      .from(notifications)
+      .where(
+        and(
+          sql`${notifications.createdAt} >= NOW() - INTERVAL '${sql.raw(String(days))} days'`,
+          sql`${notifications.readAt} IS NOT NULL`,
+        ),
+      );
+
+    const byType = await this.db
+      .select({
+        type: notifications.type,
+        count: sql<number>`COUNT(*)::int`,
+        readCount: sql<number>`COUNT(CASE WHEN ${notifications.readAt} IS NOT NULL THEN 1 END)::int`,
+      })
+      .from(notifications)
+      .where(
+        sql`${notifications.createdAt} >= NOW() - INTERVAL '${sql.raw(String(days))} days'`,
+      )
+      .groupBy(notifications.type);
+
+    return {
+      days,
+      totalSent: Number(totalSent[0]?.c ?? 0),
+      totalRead: Number(totalRead[0]?.c ?? 0),
+      readRate:
+        totalSent[0]?.c > 0
+          ? Math.round((Number(totalRead[0]?.c ?? 0) / Number(totalSent[0]?.c ?? 1)) * 100)
+          : 0,
+      byType,
+    };
   }
 }

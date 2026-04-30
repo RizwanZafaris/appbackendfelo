@@ -36,12 +36,6 @@ export class NotificationsController {
     return this.svc.unreadCount(user.id);
   }
 
-  /**
-   * Test/debug endpoint to create an in-app notification. Production
-   * builds disable this — real notifications are emitted server-side
-   * by the notification service in response to budget/goal/family
-   * events. Returns 403 in production to make abuse impossible.
-   */
   @Post()
   @ApiOperation({ summary: 'Create an in-app notification (debug-only; 403 in production)' })
   create(@CurrentUser() user: RequestUser, @Body() dto: CreateNotificationDto) {
@@ -61,6 +55,15 @@ export class NotificationsController {
   @ApiOperation({ summary: 'Mark all unread notifications as read' })
   markAllRead(@CurrentUser() user: RequestUser) {
     return this.svc.markAllRead(user.id);
+  }
+
+  @Post('subscribe')
+  @ApiOperation({ summary: 'Register device for push notifications' })
+  async subscribe(
+    @CurrentUser() user: RequestUser,
+    @Body() body: { platform: 'ios' | 'android' | 'web'; pushToken: string },
+  ) {
+    return this.svc.registerDevice(user.id, body);
   }
 
   @Delete(':id')

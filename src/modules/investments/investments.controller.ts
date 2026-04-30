@@ -1,17 +1,36 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { RequestUser } from '@/common/types/request-user';
 
-import { CreateInvestmentDto, UpdateInvestmentDto, UpdatePriceDto } from './dto/investment.dto';
+import {
+  CreateInvestmentDto,
+  UpdateInvestmentDto,
+  UpdatePriceDto,
+} from './dto/investment.dto';
 import { InvestmentsService } from './investments.service';
+import { MarketDataService } from './market-data.service';
+import { PortfolioService } from './portfolio.service';
 
 @ApiTags('investments')
 @ApiBearerAuth()
 @Controller('investments')
 export class InvestmentsController {
-  constructor(private readonly svc: InvestmentsService) {}
+  constructor(
+    private readonly svc: InvestmentsService,
+    private readonly portfolio: PortfolioService,
+    private readonly market: MarketDataService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'List active holdings' })
@@ -21,15 +40,25 @@ export class InvestmentsController {
 
   @Get('portfolio')
   @ApiOperation({
-    summary: 'Aggregated portfolio: cost, market value, P&L, allocation by asset class',
+    summary: 'Aggregated portfolio with live market prices',
   })
   portfolio(@CurrentUser() user: RequestUser) {
-    return this.svc.portfolio(user.id);
+    return this.portfolio.portfolio(user.id);
+  }
+
+  @Get('market/:symbol/quote')
+  @ApiOperation({ summary: 'Live market quote for a symbol' })
+  async quote(@Param('symbol') symbol: string) {
+    // Uses the db from InvestmentsService via a different approach
+    return this.market.fetchQuote(this.svc['db'], symbol);
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Holding detail' })
-  detail(@CurrentUser() user: RequestUser, @Param('id', ParseUUIDPipe) id: string) {
+  detail(
+    @CurrentUser() user: RequestUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
     return this.svc.detail(user.id, id);
   }
 
@@ -50,7 +79,7 @@ export class InvestmentsController {
   }
 
   @Post(':id/price')
-  @ApiOperation({ summary: 'Manual price refresh (no live feed in Phase 1)' })
+  @ApiOperation({ summary: 'Manual price refresh' })
   updatePrice(
     @CurrentUser() user: RequestUser,
     @Param('id', ParseUUIDPipe) id: string,
@@ -61,7 +90,10 @@ export class InvestmentsController {
 
   @Delete(':id')
   @ApiOperation({ summary: 'Archive a holding' })
-  archive(@CurrentUser() user: RequestUser, @Param('id', ParseUUIDPipe) id: string) {
+  archive(
+    @CurrentUser() user: RequestUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
     return this.svc.archive(user.id, id);
   }
 }
