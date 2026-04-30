@@ -61,7 +61,7 @@ export class RemittanceNotebookService {
         fxRate: data.fxRate ? String(data.fxRate) : undefined,
         deliveryMethod: data.deliveryMethod,
         status: (data.status || 'planned') as 'planned' | 'sent' | 'received' | 'cancelled',
-        plannedDate: data.plannedDate ? new Date(data.plannedDate) : undefined,
+        plannedDate: data.plannedDate,
         notes: data.notes,
       })
       .returning();
@@ -69,8 +69,9 @@ export class RemittanceNotebookService {
   }
 
   async update(userId: string, entryId: string, data: Partial<{
-    recipientName: string; status: string; notes: string;
+    recipientName: string; status: 'planned' | 'sent' | 'received' | 'cancelled'; notes: string;
     targetAmountMinor: number; feeMinor: number; fxRate: string;
+    sentAt: Date; receivedAt: Date;
   }>) {
     const result = await this.db
       .update(remittanceNotebookEntries)
@@ -90,14 +91,14 @@ export class RemittanceNotebookService {
     return this.update(userId, entryId, {
       status: 'sent',
       sentAt: new Date(),
-    } as any);
+    });
   }
 
   async markAsReceived(userId: string, entryId: string) {
     return this.update(userId, entryId, {
       status: 'received',
       receivedAt: new Date(),
-    } as any);
+    });
   }
 
   async delete(userId: string, entryId: string) {

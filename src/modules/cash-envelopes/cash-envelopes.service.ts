@@ -47,7 +47,7 @@ export class CashEnvelopesService {
   }
 
   async update(userId: string, envelopeId: string, data: Partial<{
-    name: string; category: string; budgetMinor: number; isActive: boolean;
+    name: string; category: string; budgetMinor: number; spentMinor: number; isActive: boolean;
   }>) {
     const result = await this.db
       .update(cashEnvelopes)
