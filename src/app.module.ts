@@ -34,6 +34,7 @@ import { RemittanceNotebookModule } from './modules/remittance-notebook/remittan
 import { MonthlyCloseModule } from './modules/monthly-close/monthly-close.module';
 import { ExportModule } from './modules/export/export.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { FxRatesModule } from './modules/fx-rates/fx-rates.module';
 
 @Module({
   imports: [
@@ -87,6 +88,7 @@ import { AdminModule } from './modules/admin/admin.module';
     MonthlyCloseModule,
     ExportModule,
     AdminModule,
+    FxRatesModule,
   ],
   providers: [
     {

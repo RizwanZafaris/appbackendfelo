@@ -2,7 +2,7 @@ import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 
 import { Drizzle, DRIZZLE } from '@/common/db/db.module';
-import { devices, notifications } from '@db/schema';
+import { devices, notifications, notificationTemplates } from '@db/schema';
 
 import { CreateNotificationDto, RegisterDeviceDto } from './dto/notification.dto';
 
@@ -116,5 +116,50 @@ export class NotificationsService {
   async removeDevice(userId: string, id: string) {
     await this.db.delete(devices).where(and(eq(devices.id, id), eq(devices.userId, userId)));
     return { ok: true };
+  }
+
+  // ---- Template-driven dispatch (S7 E1) -----------------------------
+  /**
+   * Render a notification from a stored template + variables and persist
+   * it as an in-app notification row. Future enhancement: fan-out to FCM
+   * / APNs / email via integration adapters.
+   */
+  async dispatch(
+    userId: string,
+    templateKey: string,
+    variables: Record<string, string>,
+    channel?: 'push' | 'email' | 'inapp' | 'sms',
+  ) {
+    const [template] = await this.db
+      .select()
+      .from(notificationTemplates)
+      .where(
+        and(eq(notificationTemplates.key, templateKey), eq(notificationTemplates.isActive, true)),
+      )
+      .limit(1);
+    if (!template) return { sent: false, reason: 'Template not found' };
+
+    const render = (s: string | null) => {
+      if (!s) return '';
+      return Object.entries(variables).reduce(
+        (acc, [k, v]) => acc.replace(new RegExp(`{{${k}}}`, 'g'), v),
+        s,
+      );
+    };
+    const title = render(template.titleEn);
+    const body = render(template.bodyEn);
+
+    const [row] = await this.db
+      .insert(notifications)
+      .values({
+        userId,
+        channel: (channel ?? template.channel) as never,
+        type: templateKey,
+        title,
+        body,
+        payload: { templateKey, variables },
+      } as never)
+      .returning();
+    return { sent: true, channel: channel ?? template.channel, notificationId: row.id, title, body };
   }
 }

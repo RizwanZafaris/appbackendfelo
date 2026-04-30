@@ -76,6 +76,20 @@ export class NotificationsController {
     return this.svc.remove(user.id, id);
   }
 
+  @Post('dispatch')
+  @ApiOperation({ summary: 'Render a notification template and persist it' })
+  dispatch(
+    @CurrentUser() user: RequestUser,
+    @Body()
+    body: {
+      templateKey: string;
+      variables: Record<string, string>;
+      channel?: 'push' | 'email' | 'inapp' | 'sms';
+    },
+  ) {
+    return this.svc.dispatch(user.id, body.templateKey, body.variables, body.channel);
+  }
+
   // ─── Triggers (E4) ─────────────────────────────────────
   @Get('triggers')
   listTriggers(@Query('cursor') cursor?: string, @Query('limit') limit?: string) {
