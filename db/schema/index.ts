@@ -1735,3 +1735,51 @@ export type NewAnalyticsEventTaxonomy = typeof analyticsEventTaxonomy.$inferInse
 // Plural alias compatibility shims (some services import plural names)
 export const auditLogs = auditLog;
 export const piiAccessLogs = piiAccessLog;
+
+// =====================================================================
+// Squad 8 Ops Portal cross-cutting tables
+// =====================================================================
+export const appConfig = pgTable('app_config', {
+  id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  key: text('key').notNull().unique(),
+  value: jsonb('value').$type<Record<string, unknown>>().notNull().default({}),
+  description: text('description'),
+  audience: jsonb('audience').$type<Record<string, unknown>>().notNull().default({}),
+  version: integer('version').notNull().default(1),
+  updatedByAdminId: uuid('updated_by_admin_id').references(() => adminUsers.id),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const vendorCredentials = pgTable(
+  'vendor_credentials',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    vendorKey: text('vendor_key').notNull(),
+    env: text('env', { enum: ['dev', 'staging', 'prod'] }).notNull(),
+    encryptedValue: text('encrypted_value').notNull(),
+    setByAdminId: uuid('set_by_admin_id').references(() => adminUsers.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({ vendorEnvIdx: uniqueIndex('idx_vendor_env').on(t.vendorKey, t.env) }),
+);
+
+export const notificationTriggers = pgTable('notification_triggers', {
+  id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+  ruleKey: text('rule_key').notNull().unique(),
+  conditionDsl: jsonb('condition_dsl').$type<Record<string, unknown>>().notNull().default({}),
+  templateKey: text('template_key').notNull(),
+  channelPriority: jsonb('channel_priority').$type<unknown[]>().notNull().default([]),
+  throttlePerDay: integer('throttle_per_day').notNull().default(1),
+  audience: jsonb('audience').$type<Record<string, unknown>>().notNull().default({}),
+  isActive: boolean('is_active').notNull().default(true),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type AppConfig = typeof appConfig.$inferSelect;
+export type NewAppConfigRow = typeof appConfig.$inferInsert;
+export type VendorCredential = typeof vendorCredentials.$inferSelect;
+export type NewVendorCredential = typeof vendorCredentials.$inferInsert;
+export type NotificationTrigger = typeof notificationTriggers.$inferSelect;
+export type NewNotificationTrigger = typeof notificationTriggers.$inferInsert;

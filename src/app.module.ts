@@ -33,6 +33,7 @@ import { CashEnvelopesModule } from './modules/cash-envelopes/cash-envelopes.mod
 import { RemittanceNotebookModule } from './modules/remittance-notebook/remittance-notebook.module';
 import { MonthlyCloseModule } from './modules/monthly-close/monthly-close.module';
 import { ExportModule } from './modules/export/export.module';
+import { AdminModule } from './modules/admin/admin.module';
 
 @Module({
   imports: [
@@ -85,6 +86,7 @@ import { ExportModule } from './modules/export/export.module';
     RemittanceNotebookModule,
     MonthlyCloseModule,
     ExportModule,
+    AdminModule,
   ],
   providers: [
     {
