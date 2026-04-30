@@ -1,6 +1,7 @@
 import { Module, MiddlewareConsumer, NestModule } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { LoggerModule } from 'nestjs-pino';
 
 import { configFactory } from './config/config';
@@ -43,6 +44,13 @@ import { DisbursementModule } from './modules/remittance/disbursement.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, load: [configFactory] }),
+    // Per-IP rate limit. 100 req/min default; auth endpoints can override
+    // tighter via @Throttle({ ttl, limit }) on the controller method.
+    ThrottlerModule.forRoot([
+      { name: 'short', ttl: 1_000, limit: 10 },
+      { name: 'medium', ttl: 60_000, limit: 100 },
+      { name: 'long', ttl: 3_600_000, limit: 1_000 },
+    ]),
     LoggerModule.forRoot({
       pinoHttp: {
         autoLogging: true,
@@ -99,10 +107,8 @@ import { DisbursementModule } from './modules/remittance/disbursement.module';
     DisbursementModule,
   ],
   providers: [
-    {
-      provide: APP_GUARD,
-      useClass: SupabaseJwtGuard,
-    },
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    { provide: APP_GUARD, useClass: SupabaseJwtGuard },
   ],
 })
 export class AppModule implements NestModule {
