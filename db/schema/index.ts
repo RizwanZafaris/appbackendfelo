@@ -18,11 +18,14 @@ import {
   integer,
   jsonb,
   numeric,
+  pgEnum,
   pgTable,
+  serial,
   text,
   timestamp,
   uniqueIndex,
   uuid,
+  varchar,
 } from 'drizzle-orm/pg-core';
 
 // -- PROFILES (1:1 with auth.users) -------------------------------------
@@ -1783,3 +1786,196 @@ export type VendorCredential = typeof vendorCredentials.$inferSelect;
 export type NewVendorCredential = typeof vendorCredentials.$inferInsert;
 export type NotificationTrigger = typeof notificationTriggers.$inferSelect;
 export type NewNotificationTrigger = typeof notificationTriggers.$inferInsert;
+
+// =====================================================================
+// Treasury / Ledger / Disbursement subsystem (Squads 2/3/4)
+// Self-contained back-office tables with integer PKs. Distinct from
+// the user-facing UUID-based profiles + audit_log model on the rest of
+// this schema. SQL-namespaced under treasury_*.
+// =====================================================================
+export const userStatusEnum = pgEnum('user_status', ['active', 'suspended', 'inactive']);
+export const kycTierEnum = pgEnum('kyc_tier', ['none', 'basic', 'verified', 'premium']);
+export const auditActionEnum = pgEnum('audit_action', [
+  'user_created', 'user_updated', 'user_deleted',
+  'kyc_submitted', 'kyc_approved', 'kyc_rejected',
+  'transaction_created', 'transaction_updated', 'transaction_deleted',
+  'ledger_entry_created', 'ledger_entry_reversed',
+  'deal_booked', 'deal_settled', 'deal_cancelled',
+  'disbursement_created', 'disbursement_sent', 'disbursement_received',
+  'disbursement_cancelled', 'disbursement_retried', 'disbursement_failed',
+]);
+export const ledgerAccountTypeEnum = pgEnum('ledger_account_type', ['asset', 'liability', 'equity', 'income', 'expense']);
+export const ledgerNormalSideEnum = pgEnum('ledger_normal_side', ['debit', 'credit']);
+export const dealStatusEnum = pgEnum('deal_status', ['draft', 'booked', 'settled', 'cancelled']);
+export const disbursementMethodTypeEnum = pgEnum('disbursement_method_type', ['wallet', 'bank', 'cash_otc']);
+export const disbursementOrderStatusEnum = pgEnum('disbursement_order_status', ['pending', 'sent', 'received', 'cancelled', 'failed']);
+
+export const treasuryActors = pgTable(
+  'treasury_actors',
+  {
+    id: serial('id').primaryKey(),
+    email: varchar('email', { length: 255 }).notNull().unique(),
+    passwordHash: varchar('password_hash', { length: 255 }),
+    status: userStatusEnum('status').notNull().default('active'),
+    kycTier: kycTierEnum('kyc_tier').notNull().default('none'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    emailIdx: uniqueIndex('treasury_actors_email_idx').on(table.email),
+  }),
+);
+
+export const treasuryAuditLogs = pgTable(
+  'treasury_audit_logs',
+  {
+    id: serial('id').primaryKey(),
+    actorId: integer('actor_id').references(() => treasuryActors.id),
+    action: auditActionEnum('action').notNull(),
+    entityType: varchar('entity_type', { length: 64 }).notNull(),
+    entityId: integer('entity_id'),
+    payload: jsonb('payload'),
+    ipAddress: varchar('ip_address', { length: 64 }),
+    userAgent: text('user_agent'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    actorIdx: index('treasury_audit_logs_actor_id_idx').on(table.actorId),
+    actionIdx: index('treasury_audit_logs_action_idx').on(table.action),
+    entityIdx: index('treasury_audit_logs_entity_idx').on(table.entityType, table.entityId),
+    createdAtIdx: index('treasury_audit_logs_created_at_idx').on(table.createdAt),
+  }),
+);
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const ledgerAccounts: any = pgTable(
+  'ledger_accounts',
+  {
+    id: serial('id').primaryKey(),
+    actorId: integer('actor_id').notNull().references(() => treasuryActors.id),
+    type: ledgerAccountTypeEnum('type').notNull(),
+    normalSide: ledgerNormalSideEnum('normal_side').notNull(),
+    parentId: integer('parent_id'),
+    currency: varchar('currency', { length: 3 }).notNull(),
+    balanceMinor: bigint('balance_minor', { mode: 'bigint' }).notNull().default(0n),
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    actorIdx: index('ledger_accounts_actor_id_idx').on(table.actorId),
+    typeIdx: index('ledger_accounts_type_idx').on(table.type),
+    currencyIdx: index('ledger_accounts_currency_idx').on(table.currency),
+  }),
+);
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const ledgerEntries: any = pgTable(
+  'ledger_entries',
+  {
+    id: serial('id').primaryKey(),
+    transactionId: varchar('transaction_id', { length: 64 }).notNull(),
+    ledgerAccountId: integer('ledger_account_id').notNull(),
+    debitMinor: bigint('debit_minor', { mode: 'bigint' }).notNull().default(0n),
+    creditMinor: bigint('credit_minor', { mode: 'bigint' }).notNull().default(0n),
+    currency: varchar('currency', { length: 3 }).notNull(),
+    postedAt: timestamp('posted_at', { withTimezone: true }).defaultNow().notNull(),
+    reversalOf: integer('reversal_of'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    txnIdx: index('ledger_entries_transaction_id_idx').on(table.transactionId),
+    accountIdx: index('ledger_entries_ledger_account_id_idx').on(table.ledgerAccountId),
+    postedAtIdx: index('ledger_entries_posted_at_idx').on(table.postedAt),
+    reversalIdx: index('ledger_entries_reversal_of_idx').on(table.reversalOf),
+  }),
+);
+
+export const treasuryAccounts = pgTable(
+  'treasury_accounts',
+  {
+    id: serial('id').primaryKey(),
+    currency: varchar('currency', { length: 3 }).notNull().unique(),
+    balanceMinor: bigint('balance_minor', { mode: 'bigint' }).notNull().default(0n),
+    bankName: varchar('bank_name', { length: 255 }),
+    accountNoMasked: varchar('account_no_masked', { length: 64 }),
+    country: varchar('country', { length: 2 }),
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+);
+
+export const deals = pgTable(
+  'deals',
+  {
+    id: serial('id').primaryKey(),
+    sourceCurrency: varchar('source_currency', { length: 3 }).notNull(),
+    targetCurrency: varchar('target_currency', { length: 3 }).notNull(),
+    sourceAmountMinor: bigint('source_amount_minor', { mode: 'bigint' }).notNull(),
+    targetAmountMinor: bigint('target_amount_minor', { mode: 'bigint' }).notNull(),
+    ourRate: numeric('our_rate', { precision: 18, scale: 8 }).notNull(),
+    marketRate: numeric('market_rate', { precision: 18, scale: 8 }).notNull(),
+    marginBps: integer('margin_bps').notNull(),
+    status: dealStatusEnum('status').notNull().default('draft'),
+    bookedAt: timestamp('booked_at', { withTimezone: true }),
+    settledAt: timestamp('settled_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    statusIdx: index('deals_status_idx').on(table.status),
+    currenciesIdx: index('deals_currencies_idx').on(table.sourceCurrency, table.targetCurrency),
+  }),
+);
+
+export const disbursementMethods = pgTable(
+  'disbursement_methods',
+  {
+    id: serial('id').primaryKey(),
+    type: disbursementMethodTypeEnum('type').notNull(),
+    provider: varchar('provider', { length: 128 }).notNull(),
+    country: varchar('country', { length: 2 }).notNull(),
+    isActive: boolean('is_active').notNull().default(true),
+    supportsCurrencies: jsonb('supports_currencies').notNull().default([]),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    typeCountryIdx: index('disbursement_methods_type_country_idx').on(table.type, table.country),
+  }),
+);
+
+export const disbursementOrders = pgTable(
+  'disbursement_orders',
+  {
+    id: serial('id').primaryKey(),
+    actorId: integer('actor_id').notNull().references(() => treasuryActors.id),
+    dealId: integer('deal_id').references(() => deals.id),
+    methodId: integer('method_id').notNull().references(() => disbursementMethods.id),
+    amountMinor: bigint('amount_minor', { mode: 'bigint' }).notNull(),
+    currency: varchar('currency', { length: 3 }).notNull(),
+    status: disbursementOrderStatusEnum('status').notNull().default('pending'),
+    providerRef: varchar('provider_ref', { length: 255 }),
+    sentAt: timestamp('sent_at', { withTimezone: true }),
+    receivedAt: timestamp('received_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    actorIdx: index('disbursement_orders_actor_id_idx').on(table.actorId),
+    dealIdx: index('disbursement_orders_deal_id_idx').on(table.dealId),
+    statusIdx: index('disbursement_orders_status_idx').on(table.status),
+  }),
+);
+
+export type TreasuryActor = typeof treasuryActors.$inferSelect;
+export type NewTreasuryActor = typeof treasuryActors.$inferInsert;
+export type TreasuryAuditLog = typeof treasuryAuditLogs.$inferSelect;
+export type NewTreasuryAuditLog = typeof treasuryAuditLogs.$inferInsert;
+export type TreasuryAccount = typeof treasuryAccounts.$inferSelect;
+export type Deal = typeof deals.$inferSelect;
+export type NewDeal = typeof deals.$inferInsert;
+export type DisbursementMethod = typeof disbursementMethods.$inferSelect;
+export type DisbursementOrder = typeof disbursementOrders.$inferSelect;
+export type NewDisbursementOrder = typeof disbursementOrders.$inferInsert;

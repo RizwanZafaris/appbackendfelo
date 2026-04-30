@@ -35,6 +35,10 @@ import { MonthlyCloseModule } from './modules/monthly-close/monthly-close.module
 import { ExportModule } from './modules/export/export.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { FxRatesModule } from './modules/fx-rates/fx-rates.module';
+import { AuditModule } from './modules/audit/audit.module';
+import { LedgerModule } from './modules/ledger/ledger.module';
+import { TreasuryModule } from './modules/treasury/treasury.module';
+import { DisbursementModule } from './modules/remittance/disbursement.module';
 
 @Module({
   imports: [
@@ -89,6 +93,10 @@ import { FxRatesModule } from './modules/fx-rates/fx-rates.module';
     ExportModule,
     AdminModule,
     FxRatesModule,
+    AuditModule,
+    LedgerModule,
+    TreasuryModule,
+    DisbursementModule,
   ],
   providers: [
     {
