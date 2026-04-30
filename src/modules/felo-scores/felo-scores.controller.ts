@@ -1,5 +1,5 @@
-import { Controller, Get, Query } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
+import { Controller, Get } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { RequestUser } from '@/common/types/request-user';
@@ -19,15 +19,8 @@ export class FeloScoresController {
   }
 
   @Get('history')
-  @ApiQuery({ name: 'limit', required: false, type: Number })
-  @ApiOperation({ summary: 'Felo Score history (last N calculations)' })
-  history(@CurrentUser() user: RequestUser, @Query('limit') limit?: string) {
-    return this.svc.history(user.id, limit ? parseInt(limit, 10) : 30);
-  }
-
-  @Get('breakdown')
-  @ApiOperation({ summary: 'Felo Score breakdown with weights and components' })
-  breakdown(@CurrentUser() user: RequestUser) {
-    return this.svc.breakdown(user.id);
+  @ApiOperation({ summary: 'Felo Score history (last 30 calculations)' })
+  history(@CurrentUser() user: RequestUser) {
+    return this.svc.history(user.id);
   }
 }

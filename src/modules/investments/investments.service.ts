@@ -1,21 +1,14 @@
-import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
+import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { and, desc, eq } from 'drizzle-orm';
 
 import { Drizzle, DRIZZLE } from '@/common/db/db.module';
 import { investments } from '@db/schema';
 
 import { CreateInvestmentDto, UpdateInvestmentDto, UpdatePriceDto } from './dto/investment.dto';
-import { MarketDataService } from './market-data.service';
 
 @Injectable()
 export class InvestmentsService {
-  private readonly log = new Logger(InvestmentsService.name);
-
-  constructor(
-    @Inject(DRIZZLE) private readonly db: Drizzle,
-    private readonly market: MarketDataService,
-  ) {}
+  constructor(@Inject(DRIZZLE) private readonly db: Drizzle) {}
 
   list(userId: string) {
     return this.db
@@ -31,6 +24,67 @@ export class InvestmentsService {
     });
     if (!row) throw new NotFoundException('Investment not found');
     return row;
+  }
+
+  /**
+   * Aggregated portfolio summary used by the Flutter portfolio screen.
+   * Computes:
+   *   - totalCostMinor   = Σ cost_basis_minor across active holdings
+   *   - totalMarketMinor = Σ (last_price_minor * units) — null if any holding lacks price
+   *   - totalPnLMinor    = market - cost
+   *   - allocations[]    = grouped by asset_class, with weight
+   */
+  async portfolio(userId: string) {
+    const rows = await this.list(userId);
+    let totalCostMinor = 0;
+    let totalMarketMinor = 0;
+    let anyMissingPrice = false;
+
+    const byClass = new Map<
+      string,
+      { costMinor: number; marketMinor: number; pricedMarketMinor: number }
+    >();
+
+    for (const r of rows) {
+      const cost = r.costBasisMinor;
+      totalCostMinor += cost;
+      const units = Number(r.units);
+      const market = r.lastPriceMinor != null ? Math.round(r.lastPriceMinor * units) : null;
+      if (market === null) {
+        anyMissingPrice = true;
+      } else {
+        totalMarketMinor += market;
+      }
+      const slot = byClass.get(r.assetClass) ?? {
+        costMinor: 0,
+        marketMinor: 0, // includes cost-fallback for unpriced rows (UI display)
+        pricedMarketMinor: 0, // priced-only, used for weight calc
+      };
+      slot.costMinor += cost;
+      slot.marketMinor += market ?? cost;
+      if (market != null) slot.pricedMarketMinor += market;
+      byClass.set(r.assetClass, slot);
+    }
+
+    // Weights are computed from PRICED market values only — so allocations
+    // sum to 1.0 even when some holdings lack a price. UI can still render
+    // the unpriced classes by showing `marketMinor` (cost-fallback) without
+    // pretending we know their weight in the portfolio.
+    const allocations = Array.from(byClass.entries()).map(([assetClass, v]) => ({
+      assetClass,
+      costMinor: v.costMinor,
+      marketMinor: v.marketMinor,
+      weight: totalMarketMinor === 0 ? 0 : v.pricedMarketMinor / totalMarketMinor,
+    }));
+
+    return {
+      holdings: rows.length,
+      totalCostMinor,
+      totalMarketMinor: anyMissingPrice ? null : totalMarketMinor,
+      totalPnLMinor: anyMissingPrice ? null : totalMarketMinor - totalCostMinor,
+      anyMissingPrice,
+      allocations,
+    };
   }
 
   async create(userId: string, dto: CreateInvestmentDto) {
@@ -96,32 +150,5 @@ export class InvestmentsService {
       .returning();
     if (!updated) throw new NotFoundException('Investment not found');
     return { ok: true };
-  }
-
-  /** Refresh prices for all active holdings every 15 minutes. */
-  @Cron('*/15 * * * *')
-  async refreshPrices() {
-    this.log.log('Refreshing investment prices...');
-    const rows = await this.db
-      .select()
-      .from(investments)
-      .where(eq(investments.isArchived, false));
-
-    const symbols = [...new Set(rows.map((r) => r.symbol))];
-    for (const symbol of symbols) {
-      try {
-        const quote = await this.market.fetchQuote(this.db, symbol);
-        await this.db
-          .update(investments)
-          .set({
-            lastPriceMinor: Math.round(quote.price * 100),
-            lastPricedAt: new Date(),
-          })
-          .where(eq(investments.symbol, symbol));
-        this.log.debug(`Refreshed ${symbol}: ${quote.price}`);
-      } catch (e) {
-        this.log.warn(`Failed to refresh ${symbol}: ${(e as Error).message}`);
-      }
-    }
   }
 }

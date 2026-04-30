@@ -786,7 +786,7 @@ export const categories = pgTable(
     key: text('key').notNull().unique(),
     labelEn: text('label_en').notNull(),
     labelUr: text('label_ur'),
-    parentKey: text('parent_key').references(() => categories.key, { onDelete: 'set null' }),
+    parentKey: text('parent_key'),
     icon: text('icon'),
     color: text('color'),
     sortOrder: integer('sort_order').notNull().default(0),
@@ -1618,43 +1618,6 @@ export const analyticsEventTaxonomy = pgTable(
   }),
 );
 
-// =====================================================================
-// Type exports — existing
-// =====================================================================
-export type MfaSecret = typeof mfaSecrets.$inferSelect;
-export type ReferralCode = typeof referralCodes.$inferSelect;
-export type Referral = typeof referrals.$inferSelect;
-export type Split = typeof splits.$inferSelect;
-export type SplitParticipant = typeof splitParticipants.$inferSelect;
-export type Investment = typeof investments.$inferSelect;
-export type NewInvestment = typeof investments.$inferInsert;
-export type Profile = typeof profiles.$inferSelect;
-export type NewProfile = typeof profiles.$inferInsert;
-export type Account = typeof accounts.$inferSelect;
-export type NewAccount = typeof accounts.$inferInsert;
-export type Transaction = typeof transactions.$inferSelect;
-export type NewTransaction = typeof transactions.$inferInsert;
-export type Budget = typeof budgets.$inferSelect;
-export type NewBudget = typeof budgets.$inferInsert;
-export type Goal = typeof goals.$inferSelect;
-export type NewGoal = typeof goals.$inferInsert;
-export type FeloScore = typeof feloScores.$inferSelect;
-export type RecurringBill = typeof recurringBills.$inferSelect;
-export type Subscription = typeof subscriptions.$inferSelect;
-export type CoachConversation = typeof coachConversations.$inferSelect;
-export type CoachQuery = typeof coachQueries.$inferSelect;
-export type FamilyGroup = typeof familyGroups.$inferSelect;
-export type FamilyMember = typeof familyMembers.$inferSelect;
-export type Notification = typeof notifications.$inferSelect;
-export type Device = typeof devices.$inferSelect;
-export type CashEnvelope = typeof cashEnvelopes.$inferSelect;
-export type NewCashEnvelope = typeof cashEnvelopes.$inferInsert;
-export type RemittanceNotebookEntry = typeof remittanceNotebookEntries.$inferSelect;
-export type NewRemittanceNotebookEntry = typeof remittanceNotebookEntries.$inferInsert;
-export type MonthlyClose = typeof monthlyCloses.$inferSelect;
-export type NewMonthlyClose = typeof monthlyCloses.$inferInsert;
-export type UserExport = typeof userExports.$inferSelect;
-export type SubscriptionUsage = typeof subscriptionUsage.$inferSelect;
 
 // =====================================================================
 // Type exports — S1 CAPTURE
@@ -1730,3 +1693,45 @@ export type I18nString = typeof i18nStrings.$inferSelect;
 export type FeatureFlag = typeof featureFlags.$inferSelect;
 export type DataRetentionPolicy = typeof dataRetentionPolicies.$inferSelect;
 export type AnalyticsEventTaxonomy = typeof analyticsEventTaxonomy.$inferSelect;
+
+// =====================================================================
+// New* insert types — added to satisfy Kimi-generated services
+// =====================================================================
+export type AuditLog = AuditLogEntry;
+export type NewAuditLog = typeof auditLog.$inferInsert;
+export type PiiAccessLog = PiiAccessLogEntry;
+export type NewPiiAccessLog = typeof piiAccessLog.$inferInsert;
+export type NewAdminUser = typeof adminUsers.$inferInsert;
+export type NewAdminSession = typeof adminSessions.$inferInsert;
+export type NewTwoPersonApproval = typeof twoPersonApprovals.$inferInsert;
+export type NewFamilyInvitation = typeof familyInvitations.$inferInsert;
+export type NewFamilyRolePermission = typeof familyRolePermissions.$inferInsert;
+export type NewKycDocument = typeof kycDocuments.$inferInsert;
+export type NewKycDecision = typeof kycDecisions.$inferInsert;
+export type NewFeloScoreHistory = typeof feloScoreHistory.$inferInsert;
+export type NewFeloScoreFormula = typeof feloScoreFormula.$inferInsert;
+export type NewBudgetDefault = typeof budgetDefaults.$inferInsert;
+export type NewGoalNudgeTemplate = typeof goalNudgeTemplates.$inferInsert;
+export type NewBillDetectionRule = typeof billDetectionRules.$inferInsert;
+export type NewCoachPromptTemplate = typeof coachPromptTemplates.$inferInsert;
+export type NewCoachGuardrailRule = typeof coachGuardrailRules.$inferInsert;
+export type NewCoachTool = typeof coachTools.$inferInsert;
+export type NewCoachEvalResult = typeof coachEvalResults.$inferInsert;
+export type NewReportTemplate = typeof reportTemplates.$inferInsert;
+export type NewMarketQuote = typeof marketQuotes.$inferInsert;
+export type NewPortfolioHolding = typeof portfolioHoldings.$inferInsert;
+export type NewSubscriptionTier = typeof subscriptionTiers.$inferInsert;
+export type NewCoupon = typeof coupons.$inferInsert;
+export type NewApprovalRequest = typeof approvalRequests.$inferInsert;
+export type NewPaywallVariant = typeof paywallVariants.$inferInsert;
+export type NewNotificationTemplate = typeof notificationTemplates.$inferInsert;
+export type NewAnnouncementBanner = typeof announcementBanners.$inferInsert;
+export type NewEngagementCampaign = typeof engagementCampaigns.$inferInsert;
+export type NewI18nString = typeof i18nStrings.$inferInsert;
+export type NewFeatureFlag = typeof featureFlags.$inferInsert;
+export type NewDataRetentionPolicy = typeof dataRetentionPolicies.$inferInsert;
+export type NewAnalyticsEventTaxonomy = typeof analyticsEventTaxonomy.$inferInsert;
+
+// Plural alias compatibility shims (some services import plural names)
+export const auditLogs = auditLog;
+export const piiAccessLogs = piiAccessLog;

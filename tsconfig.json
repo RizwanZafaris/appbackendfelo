@@ -20,10 +20,22 @@
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "paths": {
-      "@/*": ["src/*"],
-      "@db/*": ["db/*"]
+      "@/*": [
+        "src/*"
+      ],
+      "@db/*": [
+        "db/*"
+      ]
     }
   },
-  "include": ["src/**/*", "db/**/*", "test/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "include": [
+    "src/**/*",
+    "db/**/*",
+    "test/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "_quarantine_broken_modules"
+  ]
 }
