@@ -42,6 +42,8 @@ import { TreasuryModule } from './modules/treasury/treasury.module';
 import { DisbursementModule } from './modules/remittance/disbursement.module';
 import { AuditLogModule } from './modules/audit-log/audit-log.module';
 import { FamilyModule } from './modules/family/family.module';
+import { ReceiptOcrModule } from './modules/receipt-ocr/receipt-ocr.module';
+import { StatementImportModule } from './modules/statement-import/statement-import.module';
 
 @Module({
   imports: [
@@ -109,6 +111,8 @@ import { FamilyModule } from './modules/family/family.module';
     DisbursementModule,
     AuditLogModule,
     FamilyModule,
+    ReceiptOcrModule,
+    StatementImportModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
