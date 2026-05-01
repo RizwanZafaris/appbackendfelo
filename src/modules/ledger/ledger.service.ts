@@ -117,7 +117,15 @@ export class LedgerService {
       throw new Error(`No entries found for transaction ${transactionId}`);
     }
 
+    // Prevent double-reversal
     const reversalTxnId = `REV-${transactionId}`;
+    const existingReversal = await this.dbService.db
+      .select()
+      .from(ledgerEntries)
+      .where(eq(ledgerEntries.transactionId, reversalTxnId));
+    if (existingReversal.length > 0) {
+      throw new Error(`Transaction ${transactionId} has already been reversed`);
+    }
 
     await this.dbService.db.transaction(async (tx) => {
       for (const orig of originals) {
@@ -208,5 +216,34 @@ export class LedgerService {
     const prevCursor = cursor ? encodeCursor(cursor) : null;
 
     return { data, nextCursor, prevCursor, hasMore };
+  }
+
+  async verifyAccountOwnership(accountId: number, userId: number): Promise<void> {
+    const rows = await this.dbService.db
+      .select({ actorId: ledgerAccounts.actorId })
+      .from(ledgerAccounts)
+      .where(eq(ledgerAccounts.id, accountId));
+    if (!rows.length || rows[0].actorId !== userId) {
+      throw new Error('Account not found or access denied');
+    }
+  }
+
+  async verifyTransactionOwnership(transactionId: string, userId: number): Promise<void> {
+    const entries = await this.dbService.db
+      .select({ ledgerAccountId: ledgerEntries.ledgerAccountId })
+      .from(ledgerEntries)
+      .where(eq(ledgerEntries.transactionId, transactionId));
+    if (entries.length === 0) {
+      throw new Error(`No entries found for transaction ${transactionId}`);
+    }
+    const accountIds = [...new Set(entries.map((e) => e.ledgerAccountId))];
+    const accounts = await this.dbService.db
+      .select({ actorId: ledgerAccounts.actorId })
+      .from(ledgerAccounts)
+      .where(inArray(ledgerAccounts.id, accountIds));
+    const foreignAccount = accounts.find((a) => a.actorId !== userId);
+    if (foreignAccount) {
+      throw new Error('Transaction contains entries for accounts you do not own');
+    }
   }
 }

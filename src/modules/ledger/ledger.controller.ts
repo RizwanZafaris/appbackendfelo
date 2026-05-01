@@ -1,19 +1,11 @@
-import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
-import { Type } from 'class-transformer';
-import { IsArray, IsInt, IsString, Length, ValidateNested } from 'class-validator';
-
-import { CurrentUser } from '@/common/decorators/current-user.decorator';
+import { Controller, Get, Post, Param, Query, UseGuards, Req, Body } from '@nestjs/common';
+import { LedgerService, LedgerLine } from './ledger.service';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
-import { CursorPaginationParams } from '@/common/pagination';
+import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { RequestUser } from '@/common/types/request-user';
-
-import { LedgerLine, LedgerService } from './ledger.service';
-
-function actorIdFromUuid(uuid: string): number {
-  let h = 0;
-  for (let i = 0; i < uuid.length; i++) h = (h * 31 + uuid.charCodeAt(i)) | 0;
-  return Math.abs(h) || 1;
-}
+import { CursorPaginationParams } from '@/common/pagination';
+import { IsString, IsInt, IsOptional, IsArray, ValidateNested, Length } from 'class-validator';
+import { Type } from 'class-transformer';
 
 class PostLineDto {
   @IsInt()
@@ -49,12 +41,17 @@ export class LedgerController {
     @CurrentUser() user: RequestUser,
     @Query() query: CursorPaginationParams,
   ) {
-    return this.ledgerService.getUserChartOfAccounts(actorIdFromUuid(user.id), query);
+    return this.ledgerService.getUserChartOfAccounts(Number(user.id), query);
   }
 
   @Get('accounts/:id/balance')
-  async getBalance(@Param('id') id: string) {
+  async getBalance(
+    @CurrentUser() user: RequestUser,
+    @Param('id') id: string,
+  ) {
     const accountId = Number(id);
+    // Ownership check: verify account belongs to requesting user
+    await this.ledgerService.verifyAccountOwnership(accountId, Number(user.id));
     const balance = await this.ledgerService.getAccountBalance(accountId);
     return { accountId, balanceMinor: balance.toString() };
   }
@@ -73,11 +70,11 @@ export class LedgerController {
     }));
 
     await this.ledgerService.postEntry(
-      actorIdFromUuid(user.id),
+      Number(user.id),
       body.transactionId,
       lines,
-      req.headers.get?.('x-forwarded-for')?.toString() || (req as any).ip,
-      req.headers.get?.('user-agent')?.toString() || (req as any).headers?.['user-agent'],
+      req.ip,
+      req.headers['user-agent'],
     );
 
     return { success: true };
@@ -89,11 +86,13 @@ export class LedgerController {
     @Param('txnId') txnId: string,
     @Req() req: Request,
   ) {
+    // Ownership check: verify all original entries belong to requesting user's accounts
+    await this.ledgerService.verifyTransactionOwnership(txnId, Number(user.id));
     await this.ledgerService.reverseEntry(
-      actorIdFromUuid(user.id),
+      Number(user.id),
       txnId,
-      req.headers.get?.('x-forwarded-for')?.toString() || (req as any).ip,
-      req.headers.get?.('user-agent')?.toString() || (req as any).headers?.['user-agent'],
+      req.ip,
+      req.headers['user-agent'],
     );
     return { success: true };
   }

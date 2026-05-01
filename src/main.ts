@@ -30,6 +30,8 @@ async function bootstrap() {
               frameAncestors: ["'none'"],
               objectSrc: ["'none'"],
               upgradeInsecureRequests: [],
+              formAction: ["'self'"],
+              baseUri: ["'self'"],
             },
           }
         : false,
@@ -43,7 +45,15 @@ async function bootstrap() {
   const expressApp = app.getHttpAdapter().getInstance();
   expressApp.use(bodyParser.json({ limit: '1mb' }));
   expressApp.use(bodyParser.urlencoded({ limit: '1mb', extended: true }));
-  expressApp.set('trust proxy', 1);
+
+  // Trust proxy — only trust loopback in production. Never trust arbitrary
+  // proxies without an explicit whitelist, as X-Forwarded-For spoofing
+  // can bypass IP-based rate limits.
+  if (isProd) {
+    expressApp.set('trust proxy', ['loopback', 'linklocal', 'uniquelocal']);
+  } else {
+    expressApp.set('trust proxy', false);
+  }
 
   const apiPrefix = config.get<string>('API_PREFIX', 'v1');
   app.setGlobalPrefix(apiPrefix);
