@@ -1,32 +1,27 @@
-import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
-
-import { CurrentUser } from '@/common/decorators/current-user.decorator';
+import { Controller, Get, Post, Param, Query, Body, UseGuards, Req } from '@nestjs/common';
+import { TreasuryService } from './treasury.service';
 import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
+import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { RequestUser } from '@/common/types/request-user';
-
 import { BookDealDto } from './dto/book-deal.dto';
 import { CursorPaginationDto } from './dto/cursor-pagination.dto';
-import { TreasuryService } from './treasury.service';
-
-function actorIdFromUuid(uuid: string): number {
-  let h = 0;
-  for (let i = 0; i < uuid.length; i++) h = (h * 31 + uuid.charCodeAt(i)) | 0;
-  return Math.abs(h) || 1;
-}
+import { Roles } from '@/common/decorators/roles.decorator';
+import { RolesGuard } from '@/common/guards/roles.guard';
 
 @Controller('treasury')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class TreasuryController {
   constructor(private readonly treasuryService: TreasuryService) {}
 
   @Post('deals')
+  @Roles('treasury-operator', 'admin')
   async createDeal(
     @CurrentUser() user: RequestUser,
     @Body() body: BookDealDto,
     @Req() req: Request,
   ) {
     const result = await this.treasuryService.bookDeal(
-      actorIdFromUuid(user.id),
+      Number(user.id),
       {
         sourceCurrency: body.sourceCurrency,
         targetCurrency: body.targetCurrency,
@@ -36,33 +31,36 @@ export class TreasuryController {
         marketRate: body.marketRate,
         marginBps: body.marginBps,
       },
-      req.headers.get?.('x-forwarded-for')?.toString() || (req as any).ip,
-      req.headers.get?.('user-agent')?.toString() || (req as any).headers?.['user-agent'],
+      (req as any).ip,
+      (req as any).headers['user-agent'],
     );
     return result;
   }
 
   @Post('deals/:id/settle')
+  @Roles('treasury-operator', 'admin')
   async settleDeal(
     @CurrentUser() user: RequestUser,
     @Param('id') id: string,
     @Req() req: Request,
   ) {
     await this.treasuryService.settleDeal(
-      actorIdFromUuid(user.id),
+      Number(user.id),
       Number(id),
-      req.headers.get?.('x-forwarded-for')?.toString() || (req as any).ip,
-      req.headers.get?.('user-agent')?.toString() || (req as any).headers?.['user-agent'],
+      (req as any).ip,
+      (req as any).headers['user-agent'],
     );
     return { success: true };
   }
 
   @Get('positions')
+  @Roles('treasury-operator', 'admin', 'viewer')
   async getPositions() {
     return this.treasuryService.getPositions();
   }
 
   @Get('deals')
+  @Roles('treasury-operator', 'admin', 'viewer')
   async listDeals(@Query() query: CursorPaginationDto) {
     return this.treasuryService.listDeals(query);
   }

@@ -41,7 +41,8 @@ export class DisbursementService {
 
     if (tier.monthly !== null) {
       const now = new Date();
-      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      // Rolling 30-day window (not calendar month)
+      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
 
       const monthlyResult = await this.dbService.db
         .select({
@@ -51,7 +52,7 @@ export class DisbursementService {
         .where(
           and(
             eq(disbursementOrders.actorId, userId),
-            gte(disbursementOrders.createdAt, startOfMonth),
+            gte(disbursementOrders.createdAt, thirtyDaysAgo),
             lte(disbursementOrders.createdAt, now),
             eq(disbursementOrders.status, 'received'),
           ),
@@ -59,7 +60,7 @@ export class DisbursementService {
 
       const monthlyTotal = monthlyResult[0]?.total ?? 0n;
       if (monthlyTotal + payload.amountMinor > tier.monthly) {
-        throw new Error(`Amount exceeds KYC tier ${userKycTier} monthly limit`);
+        throw new Error(`Amount exceeds KYC tier ${userKycTier} monthly limit (rolling 30-day window)`);
       }
     }
 
