@@ -44,6 +44,7 @@ import { AuditLogModule } from './modules/audit-log/audit-log.module';
 import { FamilyModule } from './modules/family/family.module';
 import { ReceiptOcrModule } from './modules/receipt-ocr/receipt-ocr.module';
 import { StatementImportModule } from './modules/statement-import/statement-import.module';
+import { ComplianceModule } from './modules/compliance/compliance.module';
 
 @Module({
   imports: [
@@ -113,6 +114,7 @@ import { StatementImportModule } from './modules/statement-import/statement-impo
     FamilyModule,
     ReceiptOcrModule,
     StatementImportModule,
+    ComplianceModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
