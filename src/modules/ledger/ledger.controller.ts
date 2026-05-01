@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Param, Query, UseGuards, Req, Body } from '@nestjs/common';
 import { LedgerService, LedgerLine } from './ledger.service';
-import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
+import { SupabaseJwtGuard } from '@/common/guards/supabase-jwt.guard';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { RequestUser } from '@/common/types/request-user';
 import { CursorPaginationParams } from '@/common/pagination';
@@ -32,7 +32,7 @@ class PostEntryDto {
 }
 
 @Controller('ledger')
-@UseGuards(JwtAuthGuard)
+@UseGuards(SupabaseJwtGuard)
 export class LedgerController {
   constructor(private readonly ledgerService: LedgerService) {}
 

@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Param, Query, Body, UseGuards, Req } from '@nestjs/common';
 import { TreasuryService } from './treasury.service';
-import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
+import { SupabaseJwtGuard } from '@/common/guards/supabase-jwt.guard';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { RequestUser } from '@/common/types/request-user';
 import { BookDealDto } from './dto/book-deal.dto';
@@ -9,7 +9,7 @@ import { Roles } from '@/common/decorators/roles.decorator';
 import { RolesGuard } from '@/common/guards/roles.guard';
 
 @Controller('treasury')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(SupabaseJwtGuard, RolesGuard)
 export class TreasuryController {
   constructor(private readonly treasuryService: TreasuryService) {}
 

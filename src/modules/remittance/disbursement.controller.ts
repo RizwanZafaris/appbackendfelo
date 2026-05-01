@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
-import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
+import { SupabaseJwtGuard } from '@/common/guards/supabase-jwt.guard';
 import { RequestUser } from '@/common/types/request-user';
 
 import { CreateOrderDto } from './dto/create-order.dto';
@@ -33,7 +33,7 @@ function actorIdFromUuid(uuid: string): number {
 }
 
 @Controller('remittance')
-@UseGuards(JwtAuthGuard)
+@UseGuards(SupabaseJwtGuard)
 export class DisbursementController {
   constructor(private readonly disbursementService: DisbursementService) {}
 
