@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Headers, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Headers, Param, Patch, Post, Query, UnauthorizedException, UseGuards } from '@nestjs/common';
 import * as crypto from 'crypto';
 
 import { SupabaseJwtGuard } from '@/common/guards/supabase-jwt.guard';
@@ -15,21 +15,43 @@ export class AdminController {
     private readonly vendorCredentials: VendorCredentialsService,
   ) {}
 
-  // ─── Auth ──────────────────────────────────────────────
+  // ─── Auth (JWT-based) ─────────────────────────────────
   @Post('auth/register')
-  register(@Body() body: { email: string; displayName: string; credentialId: string }) {
-    return this.adminAuth.register(body.email, body.displayName, body.credentialId);
+  register(@Body() body: { email: string; displayName: string; password: string; role?: string }) {
+    return this.adminAuth.register(body.email, body.displayName, body.password, body.role);
   }
 
   @Post('auth/login')
-  login(@Body() body: { credentialId: string }) {
-    return this.adminAuth.login(body.credentialId);
+  async login(@Body() body: { email: string; password: string; totpToken?: string }) {
+    return this.adminAuth.login(body.email, body.password, body.totpToken);
+  }
+
+  @Post('auth/refresh')
+  refreshToken(@Body() body: { refreshToken: string }) {
+    return this.adminAuth.refreshAccessToken(body.refreshToken);
   }
 
   @Get('auth/me')
-  getMe(@Headers('x-admin-token') token: string) {
-    const tokenHash = crypto.createHash('sha256').update(token ?? '').digest('hex');
-    return this.adminAuth.getMe(tokenHash);
+  getMe(@Headers('authorization') authHeader: string) {
+    const token = authHeader?.replace('Bearer ', '');
+    if (!token) throw new UnauthorizedException('No token provided');
+    return this.adminAuth.getMeFromToken(token);
+  }
+
+  // ─── MFA ────────────────────────────────────────────────
+  @Post('auth/mfa/setup')
+  async setupMFA(@Body() body: { adminId: string }) {
+    return this.adminAuth.setupMFA(body.adminId);
+  }
+
+  @Post('auth/mfa/verify')
+  async verifyMFA(@Body() body: { adminId: string; token: string }) {
+    return this.adminAuth.verifyMFASetup(body.adminId, body.token);
+  }
+
+  @Post('auth/mfa/disable')
+  async disableMFA(@Body() body: { adminId: string; password: string }) {
+    return this.adminAuth.disableMFA(body.adminId, body.password);
   }
 
   @Get('users')

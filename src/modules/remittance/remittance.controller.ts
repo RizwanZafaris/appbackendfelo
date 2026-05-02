@@ -103,6 +103,15 @@ export class RemittanceController {
     return this.service.checkProviderStatus(id);
   }
 
+  @Get('transactions/:id/receipt')
+  @ApiOperation({ summary: 'Get remittance receipt' })
+  async getReceipt(
+    @CurrentUser() user: RequestUser,
+    @Param('id') id: string,
+  ) {
+    return this.service.getReceipt(id);
+  }
+
   @Post('webhook/:providerCode')
   @ApiOperation({ summary: 'Receive webhooks from payout providers' })
   async handleWebhook(

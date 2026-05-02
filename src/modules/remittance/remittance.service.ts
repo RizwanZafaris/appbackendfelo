@@ -6,6 +6,7 @@ import { Drizzle, DRIZZLE } from '@/common/db/db.module';
 import { remittanceProviders, remittanceRoutes, remittanceTransactions } from '@/common/db/schema/remittance.schema';
 import { PayoutProviderFactory } from './providers/provider-factory.service';
 import { PayoutRequest } from './providers/payout.providers';
+import { RemittanceReceiptService } from './remittance-receipt.service';
 
 @Injectable()
 export class RemittanceService {
@@ -14,6 +15,7 @@ export class RemittanceService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Drizzle,
     private readonly factory: PayoutProviderFactory,
+    private readonly receiptService: RemittanceReceiptService,
   ) {}
 
   async getAllRoutes() {
@@ -251,5 +253,16 @@ export class RemittanceService {
   async handleWebhook(providerCode: string, body: unknown, headers: any) {
     this.logger.log(`Webhook received from ${providerCode}`);
     return { received: true, provider: providerCode };
+  }
+
+  async getReceipt(transactionId: string) {
+    const receipt = await this.receiptService.generateReceipt(transactionId);
+    if (!receipt) {
+      throw new NotFoundException('Transaction not found');
+    }
+    return {
+      receipt,
+      pdfContent: this.receiptService.generatePDFContent(receipt),
+    };
   }
 }

@@ -77,7 +77,153 @@ export class AdminAuthService {
     }
   }
 
+  // ─── Admin Management (JWT-based) ────────────────────────────
+
+  private admins: Map<string, any> = new Map();
+
+  register(email: string, displayName: string, password: string, role = 'admin') {
+    const id = crypto.randomUUID();
+    const passwordHash = crypto.createHash('sha256').update(password).digest('hex');
+    const admin = {
+      id,
+      email,
+      displayName,
+      passwordHash,
+      role,
+      permissions: this.getDefaultPermissions(role),
+      mfaSecret: null as string | null,
+      mfaEnabled: false,
+      backupCodes: [] as string[],
+      createdAt: new Date(),
+    };
+    this.admins.set(id, admin);
+    this.logger.log(`Admin registered: ${email} (${role})`);
+    return { id, email, role, message: 'Admin registered successfully' };
+  }
+
+  login(email: string, password: string, totpToken?: string) {
+    const admin = Array.from(this.admins.values()).find(a => a.email === email);
+    if (!admin) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    const passwordHash = crypto.createHash('sha256').update(password).digest('hex');
+    if (admin.passwordHash !== passwordHash) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    if (admin.mfaEnabled) {
+      if (!totpToken) {
+        throw new UnauthorizedException('MFA token required');
+      }
+      if (!this.verifyTOTP(totpToken, admin.mfaSecret!)) {
+        throw new UnauthorizedException('Invalid MFA token');
+      }
+    }
+
+    const tokens = this.generateTokens(admin);
+    return {
+      ...tokens,
+      admin: { id: admin.id, email: admin.email, role: admin.role },
+    };
+  }
+
+  refreshAccessToken(refreshToken: string) {
+    const payload = this.verifyRefreshToken(refreshToken);
+    const admin = this.admins.get(payload.sub);
+    if (!admin) {
+      throw new UnauthorizedException('Admin not found');
+    }
+    return this.generateTokens(admin);
+  }
+
+  getMeFromToken(token: string) {
+    const payload = this.verifyAccessToken(token);
+    const admin = this.admins.get(payload.sub);
+    if (!admin) {
+      throw new UnauthorizedException('Admin not found');
+    }
+    return {
+      id: admin.id,
+      email: admin.email,
+      displayName: admin.displayName,
+      role: admin.role,
+      permissions: admin.permissions,
+      mfaEnabled: admin.mfaEnabled,
+    };
+  }
+
+  listUsers() {
+    return Array.from(this.admins.values()).map(a => ({
+      id: a.id,
+      email: a.email,
+      displayName: a.displayName,
+      role: a.role,
+      createdAt: a.createdAt,
+    }));
+  }
+
+  private getDefaultPermissions(role: string): string[] {
+    const perms: Record<string, string[]> = {
+      superadmin: ['*'],
+      admin: ['config:read', 'config:write', 'vendor:read', 'vendor:write', 'users:read', 'transactions:read', 'support:read', 'support:write'],
+      viewer: ['config:read', 'vendor:read', 'users:read', 'transactions:read', 'support:read'],
+    };
+    return perms[role] || perms.viewer;
+  }
+
   // ─── MFA (TOTP) ─────────────────────────────────────────────────
+
+  setupMFA(adminId: string) {
+    const admin = this.admins.get(adminId);
+    if (!admin) throw new UnauthorizedException('Admin not found');
+
+    const secret = this.generateMFASecret();
+    const uri = this.generateTOTPUri(secret, admin.email);
+    const backupCodes = this.generateBackupCodes();
+    const hashedCodes = backupCodes.map(c => this.hashBackupCode(c));
+
+    admin.mfaSecret = secret;
+    admin.backupCodes = hashedCodes;
+
+    return {
+      secret,
+      uri,
+      backupCodes,
+      message: 'Scan QR code with authenticator app and verify to enable MFA',
+    };
+  }
+
+  verifyMFASetup(adminId: string, token: string) {
+    const admin = this.admins.get(adminId);
+    if (!admin) throw new UnauthorizedException('Admin not found');
+
+    if (!admin.mfaSecret) {
+      throw new UnauthorizedException('MFA setup not initiated');
+    }
+
+    if (!this.verifyTOTP(token, admin.mfaSecret)) {
+      throw new UnauthorizedException('Invalid TOTP code');
+    }
+
+    admin.mfaEnabled = true;
+    return { mfaEnabled: true, message: 'MFA enabled successfully' };
+  }
+
+  disableMFA(adminId: string, password: string) {
+    const admin = this.admins.get(adminId);
+    if (!admin) throw new UnauthorizedException('Admin not found');
+
+    const passwordHash = crypto.createHash('sha256').update(password).digest('hex');
+    if (admin.passwordHash !== passwordHash) {
+      throw new UnauthorizedException('Invalid password');
+    }
+
+    admin.mfaEnabled = false;
+    admin.mfaSecret = null;
+    admin.backupCodes = [];
+    return { mfaEnabled: false, message: 'MFA disabled successfully' };
+  }
 
   generateMFASecret(): string {
     return authenticator.generateSecret();
