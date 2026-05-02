@@ -2,12 +2,16 @@ name: ci
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'launch-readiness/**']
   pull_request:
     branches: [main]
 
+# Strict guardrails: CI fails closed for any P0 launch-readiness regression.
+# Every job must stay green before a release tag is cut.
+
 jobs:
   lint-test-build:
+    name: Lint, test, build
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -25,7 +29,6 @@ jobs:
     env:
       NODE_ENV: test
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/felo
-      JWT_SECRET: ci-secret-32-bytes-minimum-for-jwt-hs256
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -34,7 +37,125 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint
-      - name: Apply schema
+      - name: Apply baseline schema
         run: psql "$DATABASE_URL" -f db/supabase/000_init.sql
-      - run: npm test -- --passWithNoTests
+      - name: Apply launch-readiness migration
+        run: psql "$DATABASE_URL" -f db/supabase/012_launch_readiness.sql
+      - name: Run tests with coverage gates
+        # Strictest gates on money-movement modules. Adjust upward as
+        # coverage grows; never relax without sign-off.
+        run: |
+          npx jest --coverage --coverageReporters=text --coverageReporters=lcov \
+            --coverageThreshold='{
+              "global": {
+                "branches": 25, "functions": 30, "lines": 35, "statements": 35
+              },
+              "src/modules/ledger/": {
+                "branches": 60, "functions": 70, "lines": 70, "statements": 70
+              },
+              "src/modules/remittance/": {
+                "branches": 50, "functions": 55, "lines": 55, "statements": 55
+              },
+              "src/modules/compliance/": {
+                "branches": 60, "functions": 60, "lines": 60, "statements": 60
+              }
+            }'
       - run: npm run build
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage
+          path: coverage
+
+  audit:
+    name: npm audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci --ignore-scripts
+      # Production deps only; dev-only CVEs are tracked but don't block.
+      - run: npm audit --omit=dev --audit-level=high
+
+  secrets-scan:
+    name: Gitleaks (secrets)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+
+  codeql:
+    name: CodeQL (SAST)
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+      - uses: github/codeql-action/analyze@v3
+
+  semgrep:
+    name: Semgrep
+    runs-on: ubuntu-latest
+    container: returntocorp/semgrep
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          semgrep ci --config=p/owasp-top-ten \
+                     --config=p/nodejsscan \
+                     --config=p/javascript \
+                     --config=p/secrets
+
+  trivy:
+    name: Trivy (image scan)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t felo-backend:ci .
+      - uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: felo-backend:ci
+          severity: HIGH,CRITICAL
+          exit-code: 1
+          ignore-unfixed: true
+
+  forbidden-strings:
+    name: Forbidden-strings linter
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Block JwtAuthGuard regression
+        run: |
+          if grep -RE "class JwtAuthGuard|jwt-auth.guard" src/ ; then
+            echo "::error::JwtAuthGuard shim must not be reintroduced (use SupabaseJwtGuard)."
+            exit 1
+          fi
+      - name: Block real Supabase project refs in repo
+        run: |
+          if grep -RIn "xetosbkkjowlspfxffoj" --include="*.ts" --include="*.md" --include="*.example" .; then
+            echo "::error::Real Supabase project ref committed."
+            exit 1
+          fi
+      - name: Block hardcoded service-role keys
+        run: |
+          if grep -RInE "sb_secret_[A-Za-z0-9_-]{16,}" --include="*.ts" --include="*.md" --include="*.example" .; then
+            echo "::error::Looks like a real sb_secret_ key was committed."
+            exit 1
+          fi
+      - name: Block --passWithNoTests in CI
+        run: |
+          if grep -nE "passWithNoTests" .github/workflows/*.yml; then
+            echo "::error::CI must not run with --passWithNoTests."
+            exit 1
+          fi
