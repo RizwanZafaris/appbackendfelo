@@ -1,7 +1,7 @@
 import { SetMetadata } from '@nestjs/common';
 
 /**
- * Mark a route as publicly accessible (skip JwtAuthGuard).
+ * Mark a route as publicly accessible (skip SupabaseJwtGuard).
  * Usage:
  *   @Public()
  *   @Get('health')

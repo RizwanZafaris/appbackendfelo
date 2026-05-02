@@ -8,9 +8,16 @@ import { sql } from 'drizzle-orm';
 import { RequestUser } from '../types/request-user';
 
 /**
- * After JwtAuthGuard runs, this middleware sets the Postgres session-local
- * `app.user_id` GUC so that RLS policies bound to `current_user_id()` see
- * the right user. Runs on every request — no-op if `req.user` is absent.
+ * After SupabaseJwtGuard runs, this middleware sets the Postgres
+ * session-local `app.user_id` GUC so that RLS policies bound to
+ * `current_user_id()` see the right user. Runs on every request — no-op if
+ * `req.user` is absent (e.g. routes marked @Public).
+ *
+ * IMPORTANT: this only takes effect when the backend connects on a session
+ * pool (Supabase port 5432). On port 6543 (transaction pool) the GUC is
+ * scoped to the transaction, not the connection — so calls made outside the
+ * Drizzle transaction that ran SET LOCAL will not see the user. The
+ * configFactory enforces port 5432 in production for that reason.
  */
 @Injectable()
 export class CurrentUserMiddleware implements NestMiddleware {

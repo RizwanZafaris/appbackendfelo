@@ -7,9 +7,26 @@ import helmet from 'helmet';
 import { Logger } from 'nestjs-pino';
 
 import { AppModule } from './app.module';
-import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 
 async function bootstrap() {
+  // Sentry must be initialised before NestFactory so it captures bootstrap
+  // errors. Skipped if SENTRY_DSN is empty (dev/test).
+  if (process.env.SENTRY_DSN) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const Sentry = require('@sentry/node');
+      Sentry.init({
+        dsn: process.env.SENTRY_DSN,
+        environment: process.env.NODE_ENV ?? 'development',
+        tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
+        profilesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 0,
+        release: process.env.GIT_SHA ?? 'unknown',
+      });
+    } catch {
+      // @sentry/node not installed in this build — skip silently.
+    }
+  }
+
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
   const config = app.get(ConfigService);
   const isProd = config.get<string>('NODE_ENV') === 'production';
@@ -25,7 +42,7 @@ async function bootstrap() {
               defaultSrc: ["'self'"],
               scriptSrc: ["'self'"],
               styleSrc: ["'self'", "'unsafe-inline'"],
-              imgSrc: ["'self'", 'data:', 'https:'],
+              imgSrc: ["'self'", 'data:'],
               connectSrc: ["'self'"],
               frameAncestors: ["'none'"],
               objectSrc: ["'none'"],
@@ -40,22 +57,39 @@ async function bootstrap() {
     }),
   );
 
-  // Body-size cap — block large payload DoS. File-upload endpoints use
-  // multer per-controller and override this.
   const expressApp = app.getHttpAdapter().getInstance();
+  const apiPrefix = config.get<string>('API_PREFIX', 'v1');
+
+  // Webhook routes need RAW bytes for HMAC verification — RemittanceWebhookGuard
+  // reads (req as any).rawBody. Mount the raw parser ONLY on the webhook path
+  // so every other route still receives parsed JSON.
+  const webhookPath = `/${apiPrefix}/remittance/webhook`;
+  expressApp.use(
+    webhookPath,
+    bodyParser.raw({
+      type: '*/*',
+      limit: '256kb',
+      verify: (req: { rawBody?: Buffer }, _res: unknown, buf: Buffer) => {
+        req.rawBody = Buffer.from(buf);
+      },
+    }),
+  );
   expressApp.use(bodyParser.json({ limit: '1mb' }));
   expressApp.use(bodyParser.urlencoded({ limit: '1mb', extended: true }));
 
-  // Trust proxy — only trust loopback in production. Never trust arbitrary
-  // proxies without an explicit whitelist, as X-Forwarded-For spoofing
-  // can bypass IP-based rate limits.
+  // Trust proxy: in prod use TRUST_PROXY_CIDRS allowlist if set, else
+  // loopback only. Never trust arbitrary proxies — X-Forwarded-For
+  // spoofing bypasses IP-based rate limits and audit IPs.
   if (isProd) {
-    expressApp.set('trust proxy', ['loopback', 'linklocal', 'uniquelocal']);
+    const cidrs = (config.get<string>('TRUST_PROXY_CIDRS') ?? '')
+      .split(',')
+      .map((c) => c.trim())
+      .filter(Boolean);
+    expressApp.set('trust proxy', cidrs.length > 0 ? cidrs : ['loopback']);
   } else {
     expressApp.set('trust proxy', false);
   }
 
-  const apiPrefix = config.get<string>('API_PREFIX', 'v1');
   app.setGlobalPrefix(apiPrefix);
 
   app.useGlobalPipes(
@@ -63,12 +97,15 @@ async function bootstrap() {
       whitelist: true,
       transform: true,
       forbidNonWhitelisted: true,
+      transformOptions: { enableImplicitConversion: false },
     }),
   );
-  app.useGlobalFilters(new GlobalExceptionFilter());
+
+  // GlobalExceptionFilter is registered as APP_FILTER in app.module.ts so
+  // DI works; no need to register it here.
 
   // CORS — only enable for whitelisted origins. In prod, never enable
-  // when CORS_ORIGINS is empty.
+  // when CORS_ORIGINS is empty (configFactory enforces this).
   const corsOrigins = (config.get<string>('CORS_ORIGINS') ?? '').split(',').filter(Boolean);
   if (corsOrigins.length > 0) {
     app.enableCors({
@@ -81,7 +118,7 @@ async function bootstrap() {
     app.enableCors({ origin: true, credentials: true });
   }
 
-  // OpenAPI — only mount in non-prod.
+  // OpenAPI — never mount in production.
   if (!isProd) {
     const swaggerConfig = new DocumentBuilder()
       .setTitle('Felo API')
@@ -92,6 +129,9 @@ async function bootstrap() {
     const document = SwaggerModule.createDocument(app, swaggerConfig);
     SwaggerModule.setup('docs', app, document, { jsonDocumentUrl: '/openapi.json' });
   }
+
+  // Graceful shutdown for SIGTERM (Kubernetes/Fly).
+  app.enableShutdownHooks();
 
   const port = Number(config.get<string>('PORT', '3000'));
   await app.listen(port);
