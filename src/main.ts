@@ -69,8 +69,8 @@ async function bootstrap() {
     bodyParser.raw({
       type: '*/*',
       limit: '256kb',
-      verify: (req: { rawBody?: Buffer }, _res: unknown, buf: Buffer) => {
-        req.rawBody = Buffer.from(buf);
+      verify: (req, _res, buf) => {
+        (req as unknown as { rawBody?: Buffer }).rawBody = Buffer.from(buf);
       },
     }),
   );

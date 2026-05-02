@@ -2083,3 +2083,34 @@ export type OutboxEvent = typeof outboxEvents.$inferSelect;
 export type NewOutboxEvent = typeof outboxEvents.$inferInsert;
 export type SanctionsScreening = typeof sanctionsScreenings.$inferSelect;
 export type NewSanctionsScreening = typeof sanctionsScreenings.$inferInsert;
+
+// ─────────────────────────────────────────────────────────────────────────
+// Launch-readiness items — backs the ops-portal /launch-readiness page.
+// Migration: db/supabase/013_soft_launch.sql
+// ─────────────────────────────────────────────────────────────────────────
+export const launchReadinessItems = pgTable(
+  'launch_readiness_items',
+  {
+    id: serial('id').primaryKey(),
+    key: varchar('key', { length: 128 }).notNull().unique(),
+    category: varchar('category', { length: 64 }).notNull(),
+    title: varchar('title', { length: 255 }).notNull(),
+    description: text('description'),
+    owner: varchar('owner', { length: 64 }),
+    status: varchar('status', { length: 32 }).notNull().default('pending'),
+    blocking: boolean('blocking').notNull().default(true),
+    rotationDueAt: timestamp('rotation_due_at', { withTimezone: true }),
+    rotationPeriodDays: integer('rotation_period_days'),
+    checkedBy: uuid('checked_by'),
+    checkedAt: timestamp('checked_at', { withTimezone: true }),
+    notes: text('notes'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    statusIdx: index('launch_readiness_items_status_idx').on(table.status),
+    categoryIdx: index('launch_readiness_items_category_idx').on(table.category),
+  }),
+);
+export type LaunchReadinessItem = typeof launchReadinessItems.$inferSelect;
+export type NewLaunchReadinessItem = typeof launchReadinessItems.$inferInsert;

@@ -10,6 +10,7 @@ import { DbModule } from '@/common/db/db.module';
 import { GlobalExceptionFilter } from '@/common/filters/global-exception.filter';
 import { SupabaseJwtGuard } from '@/common/guards/supabase-jwt.guard';
 import { RolesGuard } from '@/common/guards/roles.guard';
+import { RequestContextService } from '@/common/context/request-context';
 import { CurrentUserMiddleware } from '@/common/middleware/current-user.middleware';
 
 import { AccountsModule } from '@/modules/accounts/accounts.module';
@@ -21,16 +22,21 @@ import { AuthModule } from '@/modules/auth/auth.module';
 import { BudgetsModule } from '@/modules/budgets/budgets.module';
 import { CashEnvelopesModule } from '@/modules/cash-envelopes/cash-envelopes.module';
 import { CoachModule } from '@/modules/coach/coach.module';
+// SOFT-LAUNCH v1: money-movement modules (LedgerModule, TreasuryModule,
+// FxRatesModule, RemittanceModule, StatementImportModule) are excluded from
+// the DI graph and live under _disabled_money_modules/ until MSB licensing
+// + provider corridor agreements are in place. ComplianceModule + ReceiptOcr
+// are kept (compliance for AML record-keeping; receipt OCR with mocked
+// adapter for capture). To re-enable money flow, restore the imports below
+// and move the directories back. See LAUNCH_FLAGS.md.
 import { ComplianceModule } from '@/modules/compliance/compliance.module';
 import { ExportModule } from '@/modules/export/export.module';
 import { FamilyModule } from '@/modules/family/family.module';
 import { FeloScoresModule } from '@/modules/felo-scores/felo-scores.module';
-import { FxRatesModule } from '@/modules/fx-rates/fx-rates.module';
 import { GoalsModule } from '@/modules/goals/goals.module';
 import { HealthModule } from '@/modules/health/health.module';
 import { InsightsModule } from '@/modules/insights/insights.module';
 import { InvestmentsModule } from '@/modules/investments/investments.module';
-import { LedgerModule } from '@/modules/ledger/ledger.module';
 import { MonthlyCloseModule } from '@/modules/monthly-close/monthly-close.module';
 import { NotificationsModule } from '@/modules/notifications/notifications.module';
 import { OnboardingModule } from '@/modules/onboarding/onboarding.module';
@@ -39,15 +45,12 @@ import { ReceiptOcrModule } from '@/modules/receipt-ocr/receipt-ocr.module';
 import { RecurringBillsModule } from '@/modules/recurring-bills/recurring-bills.module';
 import { ReferralsModule } from '@/modules/referrals/referrals.module';
 import { RemittanceNotebookModule } from '@/modules/remittance-notebook/remittance-notebook.module';
-import { RemittanceModule } from '@/modules/remittance/remittance.module';
 import { ReportsModule } from '@/modules/reports/reports.module';
 import { SecurityModule } from '@/modules/security/security.module';
 import { SmsVerificationModule } from '@/modules/sms-verification/sms-verification.module';
 import { SplitsModule } from '@/modules/splits/splits.module';
-import { StatementImportModule } from '@/modules/statement-import/statement-import.module';
 import { SubscriptionsModule } from '@/modules/subscriptions/subscriptions.module';
 import { TransactionsModule } from '@/modules/transactions/transactions.module';
-import { TreasuryModule } from '@/modules/treasury/treasury.module';
 
 // PII redact list for pino. Centralised so any new sensitive field has one
 // place to live. Money-movement fields (amount, recipient*, IBAN, OTP, JWT)
@@ -142,20 +145,18 @@ const REDACT_PATHS = [
     ReportsModule,
     MonthlyCloseModule,
 
-    // Money movement
-    LedgerModule,
-    TreasuryModule,
-    FxRatesModule,
-    RemittanceModule,
+    // Money movement — soft-launch v1 carries ONLY the manual remittance
+    // notebook. LedgerModule / TreasuryModule / FxRatesModule / RemittanceModule
+    // (live providers) are disabled; see _disabled_money_modules/. Re-enable
+    // once MSB licensing + provider corridor agreements land.
     RemittanceNotebookModule,
 
     // Compliance & ops
     ComplianceModule,
     AdminModule,
 
-    // Capture
+    // Capture — StatementImportModule disabled until live remittance returns.
     ReceiptOcrModule,
-    StatementImportModule,
 
     // Intelligence
     CoachModule,
@@ -175,7 +176,9 @@ const REDACT_PATHS = [
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_FILTER, useClass: GlobalExceptionFilter },
+    RequestContextService,
   ],
+  exports: [RequestContextService],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {

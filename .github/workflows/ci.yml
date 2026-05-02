@@ -37,10 +37,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint
-      - name: Apply baseline schema
-        run: psql "$DATABASE_URL" -f db/supabase/000_init.sql
-      - name: Apply launch-readiness migration
-        run: psql "$DATABASE_URL" -f db/supabase/012_launch_readiness.sql
+      - name: Apply migrations (000..013 + db/schema/*)
+        run: bash scripts/apply-migrations.sh "$DATABASE_URL"
       - name: Run tests with coverage gates
         # Strictest gates on money-movement modules. Adjust upward as
         # coverage grows; never relax without sign-off.

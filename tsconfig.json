@@ -36,6 +36,7 @@
   "exclude": [
     "node_modules",
     "dist",
-    "_quarantine_broken_modules"
+    "_quarantine_broken_modules",
+    "_disabled_money_modules"
   ]
 }

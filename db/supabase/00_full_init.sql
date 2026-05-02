@@ -1,0 +1,37 @@
+-- 00_full_init.sql
+--
+-- Single concatenated bundle that re-applies every migration in order.
+-- Each underlying file is idempotent (`IF NOT EXISTS`, `OR REPLACE`,
+-- `ON CONFLICT DO NOTHING`). Running this twice is a no-op.
+--
+-- Apply by:
+--   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/supabase/00_full_init.sql
+--
+-- Or in Supabase SQL Editor: paste the contents of every numbered file
+-- in order (cat db/supabase/0*_*.sql | clip).
+--
+-- Order:
+--   000 baseline schema + RLS policies
+--   001 no-dep features
+--   002 MFA hardening
+--   003 sprint-4 hardening
+--   004 accounts metadata
+--   005 profile settings
+--   006 onboarding v2
+--   007 budget baselines
+--   008 corridor policy + identities
+--   009 QA fixes
+--   010 s1+s2 backend
+--   011 ledger / treasury / disbursement / receipt-OCR / statement-import
+--       (kept in schema even though soft-launch v1 disables the modules,
+--        so re-enabling later requires zero migration)
+--   012 launch-readiness P0 (FORCE RLS, idempotency, treasury_actors,
+--        webhook_events, outbox_events, sanctions_screenings)
+--   013 soft-launch ops surface (launch_readiness_items + audit trigger
+--        + checklist seed)
+--
+-- This file intentionally does not inline the contents — operators apply
+-- by running each file with psql or pasting in the Supabase SQL Editor.
+-- That preserves a clean per-migration audit trail in source.
+\echo 'Run each file in order. See top-of-file comment for the canonical sequence.'
+\echo 'For automation: bash scripts/apply-migrations.sh "$DATABASE_URL"'
