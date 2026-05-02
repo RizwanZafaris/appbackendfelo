@@ -9,10 +9,20 @@ import { Logger } from 'nestjs-pino';
 import { AppModule } from './app.module';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 
+import { validateEnvironment } from './common/config/env-validation';
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: true, rawBody: true });
   const config = app.get(ConfigService);
   const isProd = config.get<string>('NODE_ENV') === 'production';
+
+  // Validate environment on startup
+  const envValidation = validateEnvironment(config);
+  if (!envValidation.valid) {
+    console.error('FATAL: Environment validation failed');
+    console.error('Missing:', envValidation.missing.join(', '));
+    process.exit(1);
+  }
 
   app.useLogger(app.get(Logger));
 

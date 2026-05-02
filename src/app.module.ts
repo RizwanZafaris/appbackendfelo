@@ -8,6 +8,7 @@ import { PrometheusModule } from '@/common/metrics/prometheus.module';
 import { ComplianceModule } from '@/common/compliance/compliance.module';
 import { HealthModule } from '@/common/health/health.module';
 import { AuditLogModule } from '@/common/audit/audit-log.module';
+import { SystemModule } from '@/common/system/system.module';
 import { AuthModule } from '@/modules/auth/auth.module';
 import { UsersModule } from '@/modules/users/users.module';
 import { KycModule } from '@/modules/kyc/kyc.module';
@@ -52,6 +53,7 @@ import config from '@/config/config';
     ComplianceModule,
     HealthModule,
     AuditLogModule,
+    SystemModule,
   ],
   providers: [
     {
