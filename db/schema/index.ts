@@ -48,6 +48,7 @@ export const profiles = pgTable('profiles', {
   })
     .notNull()
     .default('not_started'),
+  sumsubApplicantId: text('sumsub_applicant_id').unique(),
   onboardingComplete: boolean('onboarding_complete').notNull().default(false),
   // Flexible settings blob — added in 005_profile_settings.sql.
   // Validated client-side by ProfileSettings (freezed) in the Flutter app.

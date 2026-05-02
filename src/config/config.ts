@@ -20,6 +20,11 @@ export const configFactory = () => {
     SUPABASE_JWKS_URL: process.env.SUPABASE_JWKS_URL ?? '',
     SUPABASE_LEGACY_JWT_SECRET: process.env.SUPABASE_LEGACY_JWT_SECRET ?? '',
     CORS_ORIGINS: process.env.CORS_ORIGINS ?? '',
+    SUMSUB_BASE_URL: process.env.SUMSUB_BASE_URL ?? 'https://test-api.sumsub.com',
+    SUMSUB_APP_TOKEN: process.env.SUMSUB_APP_TOKEN ?? '',
+    SUMSUB_SECRET_KEY: process.env.SUMSUB_SECRET_KEY ?? '',
+    SUMSUB_WEBHOOK_SECRET: process.env.SUMSUB_WEBHOOK_SECRET ?? '',
+    SUMSUB_LEVEL_NAME: process.env.SUMSUB_LEVEL_NAME ?? 'basic-kyc-level',
   };
 
   if (cfg.NODE_ENV === 'production') {
@@ -28,6 +33,9 @@ export const configFactory = () => {
       'SUPABASE_URL',
       'SUPABASE_SECRET_KEY',
       'SUPABASE_JWKS_URL',
+      'SUMSUB_APP_TOKEN',
+      'SUMSUB_SECRET_KEY',
+      'SUMSUB_WEBHOOK_SECRET',
     ];
     const missing = required.filter((k) => !cfg[k]);
     if (missing.length > 0) {
