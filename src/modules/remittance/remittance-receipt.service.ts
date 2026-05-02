@@ -47,24 +47,24 @@ export class RemittanceReceiptService {
     const receiptId = `RCP-${Date.now()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
     
     const amount = parseFloat(tx.amount as string);
-    const fee = parseFloat(tx.fee as string);
-    const fxRate = parseFloat(tx.fxRate as string);
+    const fee = parseFloat((tx.feeAmount ?? '0') as string);
+    const fxRate = parseFloat((tx.exchangeRate ?? '1') as string);
 
     const receipt: RemittanceReceipt = {
       receiptId,
       transactionId: tx.id,
-      senderName: tx.senderName || 'N/A',
-      senderEmail: tx.senderEmail || 'N/A',
+      senderName: (tx.metadata as any)?.senderName || 'N/A',
+      senderEmail: (tx.metadata as any)?.senderEmail || 'N/A',
       recipientName: tx.recipientName || 'N/A',
       recipientAccount: tx.recipientAccount || 'N/A',
       amount: amount.toFixed(2),
-      sourceCurrency: tx.sourceCurrency,
-      targetCurrency: tx.targetCurrency,
+      sourceCurrency: tx.currency || 'N/A',
+      targetCurrency: tx.targetCurrency || 'N/A',
       exchangeRate: fxRate.toFixed(4),
       fee: fee.toFixed(2),
       totalPaid: (amount + fee).toFixed(2),
-      providerName: tx.providerName || 'N/A',
-      providerReference: tx.providerReference || 'N/A',
+      providerName: tx.providerId || 'N/A',
+      providerReference: tx.providerTransactionId || 'N/A',
       status: tx.status,
       createdAt: tx.createdAt?.toISOString() || new Date().toISOString(),
       completedAt: tx.completedAt?.toISOString(),

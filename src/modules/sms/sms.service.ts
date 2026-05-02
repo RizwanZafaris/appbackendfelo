@@ -35,7 +35,7 @@ export class SmsService {
   private loadRoutes() {
     // Load from environment or database in production
     // For now, using hardcoded config based on the 4 routes provided
-    this.routes = [
+    this.routes = ([
       {
         name: 'lifetimesms',
         enabled: process.env.SMS_ROUTE_1_ENABLED === 'true',
@@ -74,7 +74,7 @@ export class SmsService {
           sender: process.env.SMS_ROUTE_4_SENDER || 'DESIGNZ%26CO',
         },
       },
-    ].filter(r => r.enabled).sort((a, b) => a.priority - b.priority);
+    ] as SmsRouteConfig[]).filter(r => r.enabled).sort((a, b) => a.priority - b.priority);
   }
 
   async sendSms(request: SmsSendRequest): Promise<SmsSendResponse> {
@@ -101,13 +101,13 @@ export class SmsService {
   private async sendViaRoute(route: SmsRouteConfig, request: SmsSendRequest): Promise<SmsSendResponse> {
     switch (route.name) {
       case 'lifetimesms':
-        return this.sendViaLifetimeSms(route.credentials, request);
+        return this.sendViaLifetimeSms(route.credentials as Record<string, string>, request);
       case 'sendpk':
-        return this.sendViaSendPk(route.credentials, request);
+        return this.sendViaSendPk(route.credentials as Record<string, string>, request);
       case 'fastsmsalerts':
-        return this.sendViaFastSmsAlerts(route.credentials, request);
+        return this.sendViaFastSmsAlerts(route.credentials as Record<string, string>, request);
       case 'bsms':
-        return this.sendViaBsms(route.credentials, request);
+        return this.sendViaBsms(route.credentials as Record<string, string>, request);
       default:
         return { success: false, error: 'Unknown route', provider: route.name };
     }

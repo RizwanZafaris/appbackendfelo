@@ -40,10 +40,11 @@ export class DataRetentionService {
 
     try {
       // Archive completed transactions older than 7 years
+      // (mark as archived by updating metadata — no 'archivedAt' column, use providerRawResponse)
       const archiveDate = this.daysAgo(this.retentionPolicies.completedTransactions);
-      const [archived] = await this.db
+      const archived = await this.db
         .update(remittanceTransactions)
-        .set({ archivedAt: new Date() })
+        .set({ metadata: { archived: true, archivedAt: new Date().toISOString() } as any })
         .where(
           and(
             eq(remittanceTransactions.status, 'completed'),
@@ -51,8 +52,8 @@ export class DataRetentionService {
           ),
         )
         .returning({ id: remittanceTransactions.id });
-      transactionsArchived = archived?.length || 0;
-    } catch (error) {
+      transactionsArchived = archived.length || 0;
+    } catch (error: any) {
       errors.push(`Archive failed: ${error.message}`);
       this.logger.error('Archive failed', error);
     }
@@ -60,7 +61,7 @@ export class DataRetentionService {
     try {
       // Delete failed transactions older than 90 days
       const deleteDate = this.daysAgo(this.retentionPolicies.failedTransactions);
-      const [deleted] = await this.db
+      const deleted = await this.db
         .delete(remittanceTransactions)
         .where(
           and(
@@ -69,8 +70,8 @@ export class DataRetentionService {
           ),
         )
         .returning({ id: remittanceTransactions.id });
-      transactionsDeleted = deleted?.length || 0;
-    } catch (error) {
+      transactionsDeleted = deleted.length || 0;
+    } catch (error: any) {
       errors.push(`Delete failed: ${error.message}`);
       this.logger.error('Delete failed', error);
     }

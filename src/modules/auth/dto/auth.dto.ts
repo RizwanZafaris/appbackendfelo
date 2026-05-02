@@ -2,11 +2,11 @@ import { IsEmail, IsString, MinLength, IsOptional, IsEnum } from 'class-validato
 
 export class LoginDto {
   @IsEmail({}, { message: 'Please provide a valid email address' })
-  email: string;
+  email!: string;
 
   @IsString()
   @MinLength(6, { message: 'Password must be at least 6 characters' })
-  password: string;
+  password!: string;
 
   @IsOptional()
   @IsString()
@@ -15,25 +15,25 @@ export class LoginDto {
 
 export class RegisterDto {
   @IsEmail({}, { message: 'Please provide a valid email address' })
-  email: string;
+  email!: string;
 
   @IsString()
   @MinLength(2, { message: 'Display name must be at least 2 characters' })
-  displayName: string;
+  displayName!: string;
 
   @IsString()
   @MinLength(8, { message: 'Password must be at least 8 characters' })
-  password: string;
+  password!: string;
 }
 
 export class RefreshTokenDto {
   @IsString()
-  refreshToken: string;
+  refreshToken!: string;
 }
 
 export class RequestOtpDto {
   @IsEmail({}, { message: 'Please provide a valid email address' })
-  email: string;
+  email!: string;
 
   @IsOptional()
   @IsString()
@@ -42,9 +42,9 @@ export class RequestOtpDto {
 
 export class VerifyOtpDto {
   @IsEmail({}, { message: 'Please provide a valid email address' })
-  email: string;
+  email!: string;
 
   @IsString()
   @MinLength(4, { message: 'OTP must be at least 4 characters' })
-  code: string;
+  code!: string;
 }

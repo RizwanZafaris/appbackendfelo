@@ -26,8 +26,8 @@ export class WebhookSignatureService {
         default:
           return this.verifyGenericSignature(payload, signature, secret);
       }
-    } catch (error) {
-      this.logger.warn(`Webhook signature verification failed: ${error.message}`);
+    } catch (error: any) {
+      this.logger.warn(`Webhook signature verification failed: ${error?.message}`);
       return false;
     }
   }

@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
-import { DrizzleModule } from '@/common/db/db.module';
+import { DbModule } from '@/common/db/db.module';
 import { CircuitBreakerModule } from '@/common/circuit-breaker/circuit-breaker.module';
 import { PrometheusModule } from '@/common/metrics/prometheus.module';
 import { ComplianceModule } from '@/common/compliance/compliance.module';
@@ -20,11 +20,11 @@ import { RemittanceModule } from '@/modules/remittance/remittance.module';
 import { SmsModule } from '@/modules/sms/sms.module';
 import { RequestIdInterceptor } from '@/common/interceptors/request-id.interceptor';
 import { LoggingInterceptor } from '@/common/interceptors/logging.interceptor';
-import config from '@/config/config';
+import { configFactory } from '@/config/config';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ load: [config], isGlobal: true }),
+    ConfigModule.forRoot({ load: [configFactory], isGlobal: true }),
     ThrottlerModule.forRoot([{
       name: 'default',
       ttl: 60000,
@@ -38,7 +38,7 @@ import config from '@/config/config';
       ttl: 300000,
       limit: 5,
     }]),
-    DrizzleModule,
+    DbModule,
     AuthModule,
     UsersModule,
     KycModule,

@@ -5,19 +5,20 @@ import {
   IsOptional,
   IsEnum,
   IsUUID,
+  MaxLength,
 } from 'class-validator';
 
 export class AdminRegisterDto {
   @IsEmail({}, { message: 'Please provide a valid email address' })
-  email: string;
+  email!: string;
 
   @IsString()
   @MinLength(2, { message: 'Display name must be at least 2 characters' })
-  displayName: string;
+  displayName!: string;
 
   @IsString()
   @MinLength(8, { message: 'Password must be at least 8 characters' })
-  password: string;
+  password!: string;
 
   @IsOptional()
   @IsString()
@@ -26,11 +27,11 @@ export class AdminRegisterDto {
 
 export class AdminLoginDto {
   @IsEmail({}, { message: 'Please provide a valid email address' })
-  email: string;
+  email!: string;
 
   @IsString()
   @MinLength(6, { message: 'Password must be at least 6 characters' })
-  password: string;
+  password!: string;
 
   @IsOptional()
   @IsString()
@@ -41,29 +42,29 @@ export class AdminLoginDto {
 
 export class AdminRefreshDto {
   @IsString()
-  refreshToken: string;
+  refreshToken!: string;
 }
 
 export class MFASetupDto {
   @IsUUID('4')
-  adminId: string;
+  adminId!: string;
 }
 
 export class MFAVerifyDto {
   @IsUUID('4')
-  adminId: string;
+  adminId!: string;
 
   @IsString()
   @MinLength(6)
   @MaxLength(6)
-  token: string;
+  token!: string;
 }
 
 export class MFADisableDto {
   @IsUUID('4')
-  adminId: string;
+  adminId!: string;
 
   @IsString()
   @MinLength(8)
-  password: string;
+  password!: string;
 }

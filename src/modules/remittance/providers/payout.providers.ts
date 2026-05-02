@@ -50,7 +50,10 @@ export abstract class PayoutProvider {
   abstract sendPayout(request: PayoutRequest): Promise<PayoutResponse>;
   abstract checkStatus(providerTransactionId: string): Promise<PayoutResponse>;
   abstract validateCredentials(): Promise<boolean>;
-  abstract getBalance?(): Promise<number>;
+
+  async getBalance(): Promise<number> {
+    throw new Error('getBalance not implemented for this provider');
+  }
 }
 
 // ============================================
@@ -59,10 +62,10 @@ export abstract class PayoutProvider {
 @Injectable()
 export class PaymobProvider extends PayoutProvider {
   protected readonly providerCode = 'paymob';
-  private api: AxiosInstance;
-  private config: ProviderConfig;
-  private accessToken: string;
-  private tokenExpiry: Date;
+  private api!: AxiosInstance;
+  private config!: ProviderConfig;
+  private accessToken!: string;
+  private tokenExpiry!: Date;
 
   async initialize(config: ProviderConfig): Promise<void> {
     this.config = config;
@@ -110,8 +113,8 @@ export class PaymobProvider extends PayoutProvider {
         rawResponse: res.data,
       };
     } catch (err) {
-      this.logger.error(`Paymob payout failed: ${err.message}`);
-      return { success: false, status: 'failed', message: err.message };
+      this.logger.error(`Paymob payout failed: ${(err as any).message}`);
+      return { success: false, status: 'failed', message: (err as any).message };
     }
   }
 
@@ -126,7 +129,7 @@ export class PaymobProvider extends PayoutProvider {
         rawResponse: res.data,
       };
     } catch (err) {
-      return { success: false, status: 'failed', message: err.message };
+      return { success: false, status: 'failed', message: (err as any).message };
     }
   }
 
@@ -146,8 +149,8 @@ export class PaymobProvider extends PayoutProvider {
 @Injectable()
 export class SamsaraProvider extends PayoutProvider {
   protected readonly providerCode = 'samsara';
-  private api: AxiosInstance;
-  private config: ProviderConfig;
+  private api!: AxiosInstance;
+  private config!: ProviderConfig;
 
   async initialize(config: ProviderConfig): Promise<void> {
     this.config = config;
@@ -215,8 +218,8 @@ export class SamsaraProvider extends PayoutProvider {
         rawResponse: tx,
       };
     } catch (err) {
-      this.logger.error(`Samsara payout failed: ${err.message}`);
-      return { success: false, status: 'failed', message: err.message };
+      this.logger.error(`Samsara payout failed: ${(err as any).message}`);
+      return { success: false, status: 'failed', message: (err as any).message };
     }
   }
 
@@ -235,7 +238,7 @@ export class SamsaraProvider extends PayoutProvider {
         rawResponse: res,
       };
     } catch (err) {
-      return { success: false, status: 'failed', message: err.message };
+      return { success: false, status: 'failed', message: (err as any).message };
     }
   }
 
@@ -255,8 +258,8 @@ export class SamsaraProvider extends PayoutProvider {
 @Injectable()
 export class KhaltiProvider extends PayoutProvider {
   protected readonly providerCode = 'khalti';
-  private api: AxiosInstance;
-  private config: ProviderConfig;
+  private api!: AxiosInstance;
+  private config!: ProviderConfig;
 
   async initialize(config: ProviderConfig): Promise<void> {
     this.config = config;
@@ -287,8 +290,8 @@ export class KhaltiProvider extends PayoutProvider {
         rawResponse: res.data,
       };
     } catch (err) {
-      this.logger.error(`Khalti payout failed: ${err.message}`);
-      return { success: false, status: 'failed', message: err.message };
+      this.logger.error(`Khalti payout failed: ${(err as any).message}`);
+      return { success: false, status: 'failed', message: (err as any).message };
     }
   }
 
@@ -306,7 +309,7 @@ export class KhaltiProvider extends PayoutProvider {
         rawResponse: res.data,
       };
     } catch (err) {
-      return { success: false, status: 'failed', message: err.message };
+      return { success: false, status: 'failed', message: (err as any).message };
     }
   }
 
@@ -326,8 +329,8 @@ export class KhaltiProvider extends PayoutProvider {
 @Injectable()
 export class SafepayRaastProvider extends PayoutProvider {
   protected readonly providerCode = 'safepay_raast';
-  private api: AxiosInstance;
-  private config: ProviderConfig;
+  private api!: AxiosInstance;
+  private config!: ProviderConfig;
 
   async initialize(config: ProviderConfig): Promise<void> {
     this.config = config;
@@ -359,8 +362,8 @@ export class SafepayRaastProvider extends PayoutProvider {
         rawResponse: res.data,
       };
     } catch (err) {
-      this.logger.error(`Safepay payout failed: ${err.message}`);
-      return { success: false, status: 'failed', message: err.message };
+      this.logger.error(`Safepay payout failed: ${(err as any).message}`);
+      return { success: false, status: 'failed', message: (err as any).message };
     }
   }
 
@@ -378,7 +381,7 @@ export class SafepayRaastProvider extends PayoutProvider {
         rawResponse: res.data,
       };
     } catch (err) {
-      return { success: false, status: 'failed', message: err.message };
+      return { success: false, status: 'failed', message: (err as any).message };
     }
   }
 
@@ -398,8 +401,8 @@ export class SafepayRaastProvider extends PayoutProvider {
 @Injectable()
 export class EightBProvider extends PayoutProvider {
   protected readonly providerCode = '8b';
-  private api: AxiosInstance;
-  private config: ProviderConfig;
+  private api!: AxiosInstance;
+  private config!: ProviderConfig;
 
   async initialize(config: ProviderConfig): Promise<void> {
     this.config = config;
@@ -440,8 +443,8 @@ export class EightBProvider extends PayoutProvider {
         rawResponse: res.data,
       };
     } catch (err) {
-      this.logger.error(`8B payout failed: ${err.message}`);
-      return { success: false, status: 'failed', message: err.message };
+      this.logger.error(`8B payout failed: ${(err as any).message}`);
+      return { success: false, status: 'failed', message: (err as any).message };
     }
   }
 
@@ -462,7 +465,7 @@ export class EightBProvider extends PayoutProvider {
         rawResponse: res.data,
       };
     } catch (err) {
-      return { success: false, status: 'failed', message: err.message };
+      return { success: false, status: 'failed', message: (err as any).message };
     }
   }
 
@@ -482,8 +485,8 @@ export class EightBProvider extends PayoutProvider {
 @Injectable()
 export class HrcUblProvider extends PayoutProvider {
   protected readonly providerCode = 'hrc_ubl';
-  private api: AxiosInstance;
-  private config: ProviderConfig;
+  private api!: AxiosInstance;
+  private config!: ProviderConfig;
 
   async initialize(config: ProviderConfig): Promise<void> {
     this.config = config;
@@ -558,8 +561,8 @@ export class HrcUblProvider extends PayoutProvider {
         rawResponse: res.data,
       };
     } catch (err) {
-      this.logger.error(`HRC UBL payout failed: ${err.message}`);
-      return { success: false, status: 'failed', message: err.message };
+      this.logger.error(`HRC UBL payout failed: ${(err as any).message}`);
+      return { success: false, status: 'failed', message: (err as any).message };
     }
   }
 
@@ -590,7 +593,7 @@ export class HrcUblProvider extends PayoutProvider {
         rawResponse: res.data,
       };
     } catch (err) {
-      return { success: false, status: 'failed', message: err.message };
+      return { success: false, status: 'failed', message: (err as any).message };
     }
   }
 
@@ -615,9 +618,9 @@ export class HrcUblProvider extends PayoutProvider {
 @Injectable()
 export class HabibMetroProvider extends PayoutProvider {
   protected readonly providerCode = 'habib_metro';
-  private api: AxiosInstance;
-  private config: ProviderConfig;
-  private authToken: string;
+  private api!: AxiosInstance;
+  private config!: ProviderConfig;
+  private authToken!: string;
 
   async initialize(config: ProviderConfig): Promise<void> {
     this.config = config;
@@ -688,8 +691,8 @@ export class HabibMetroProvider extends PayoutProvider {
         rawResponse: res.data,
       };
     } catch (err) {
-      this.logger.error(`HabibMetro payout failed: ${err.message}`);
-      return { success: false, status: 'failed', message: err.message };
+      this.logger.error(`HabibMetro payout failed: ${(err as any).message}`);
+      return { success: false, status: 'failed', message: (err as any).message };
     }
   }
 
@@ -711,7 +714,7 @@ export class HabibMetroProvider extends PayoutProvider {
         rawResponse: res.data,
       };
     } catch (err) {
-      return { success: false, status: 'failed', message: err.message };
+      return { success: false, status: 'failed', message: (err as any).message };
     }
   }
 
@@ -731,10 +734,10 @@ export class HabibMetroProvider extends PayoutProvider {
 @Injectable()
 export class Digit9Provider extends PayoutProvider {
   protected readonly providerCode = 'digit9';
-  private api: AxiosInstance;
-  private config: ProviderConfig;
-  private accessToken: string;
-  private tokenExpiry: Date;
+  private api!: AxiosInstance;
+  private config!: ProviderConfig;
+  private accessToken!: string;
+  private tokenExpiry!: Date;
 
   async initialize(config: ProviderConfig): Promise<void> {
     this.config = config;
@@ -825,8 +828,8 @@ export class Digit9Provider extends PayoutProvider {
         rawResponse: txRes.data,
       };
     } catch (err) {
-      this.logger.error(`Digit9 payout failed: ${err.message}`);
-      return { success: false, status: 'failed', message: err.message };
+      this.logger.error(`Digit9 payout failed: ${(err as any).message}`);
+      return { success: false, status: 'failed', message: (err as any).message };
     }
   }
 
@@ -839,7 +842,7 @@ export class Digit9Provider extends PayoutProvider {
         message: 'Status check not available via API',
       };
     } catch (err) {
-      return { success: false, status: 'failed', message: err.message };
+      return { success: false, status: 'failed', message: (err as any).message };
     }
   }
 
@@ -859,9 +862,9 @@ export class Digit9Provider extends PayoutProvider {
 @Injectable()
 export class MtbProvider extends PayoutProvider {
   protected readonly providerCode = 'mtb';
-  private api: AxiosInstance;
-  private config: ProviderConfig;
-  private jwtToken: string;
+  private api!: AxiosInstance;
+  private config!: ProviderConfig;
+  private jwtToken!: string;
 
   async initialize(config: ProviderConfig): Promise<void> {
     this.config = config;
@@ -954,8 +957,8 @@ export class MtbProvider extends PayoutProvider {
         rawResponse: res.data,
       };
     } catch (err) {
-      this.logger.error(`MTB payout failed: ${err.message}`);
-      return { success: false, status: 'failed', message: err.message };
+      this.logger.error(`MTB payout failed: ${(err as any).message}`);
+      return { success: false, status: 'failed', message: (err as any).message };
     }
   }
 
@@ -977,7 +980,7 @@ export class MtbProvider extends PayoutProvider {
         rawResponse: res.data,
       };
     } catch (err) {
-      return { success: false, status: 'failed', message: err.message };
+      return { success: false, status: 'failed', message: (err as any).message };
     }
   }
 
@@ -997,8 +1000,8 @@ export class MtbProvider extends PayoutProvider {
 @Injectable()
 export class AgraniBankProvider extends PayoutProvider {
   protected readonly providerCode = 'agrani_bank';
-  private api: AxiosInstance;
-  private config: ProviderConfig;
+  private api!: AxiosInstance;
+  private config!: ProviderConfig;
 
   async initialize(config: ProviderConfig): Promise<void> {
     this.config = config;
@@ -1072,8 +1075,8 @@ export class AgraniBankProvider extends PayoutProvider {
         rawResponse: res.data,
       };
     } catch (err) {
-      this.logger.error(`Agrani Bank payout failed: ${err.message}`);
-      return { success: false, status: 'failed', message: err.message };
+      this.logger.error(`Agrani Bank payout failed: ${(err as any).message}`);
+      return { success: false, status: 'failed', message: (err as any).message };
     }
   }
 
@@ -1097,7 +1100,7 @@ export class AgraniBankProvider extends PayoutProvider {
         rawResponse: res.data,
       };
     } catch (err) {
-      return { success: false, status: 'failed', message: err.message };
+      return { success: false, status: 'failed', message: (err as any).message };
     }
   }
 
@@ -1122,9 +1125,9 @@ export class AgraniBankProvider extends PayoutProvider {
 @Injectable()
 export class BracBankProvider extends PayoutProvider {
   protected readonly providerCode = 'brac_bank';
-  private api: AxiosInstance;
-  private config: ProviderConfig;
-  private bearerToken: string;
+  private api!: AxiosInstance;
+  private config!: ProviderConfig;
+  private bearerToken!: string;
 
   async initialize(config: ProviderConfig): Promise<void> {
     this.config = config;
@@ -1205,8 +1208,8 @@ export class BracBankProvider extends PayoutProvider {
         rawResponse: res.data,
       };
     } catch (err) {
-      this.logger.error(`Brac Bank payout failed: ${err.message}`);
-      return { success: false, status: 'failed', message: err.message };
+      this.logger.error(`Brac Bank payout failed: ${(err as any).message}`);
+      return { success: false, status: 'failed', message: (err as any).message };
     }
   }
 
@@ -1227,7 +1230,7 @@ export class BracBankProvider extends PayoutProvider {
         rawResponse: res.data,
       };
     } catch (err) {
-      return { success: false, status: 'failed', message: err.message };
+      return { success: false, status: 'failed', message: (err as any).message };
     }
   }
 
@@ -1247,9 +1250,9 @@ export class BracBankProvider extends PayoutProvider {
 @Injectable()
 export class PrimeBankProvider extends PayoutProvider {
   protected readonly providerCode = 'prime_bank';
-  private api: AxiosInstance;
-  private config: ProviderConfig;
-  private authToken: string;
+  private api!: AxiosInstance;
+  private config!: ProviderConfig;
+  private authToken!: string;
 
   async initialize(config: ProviderConfig): Promise<void> {
     this.config = config;
@@ -1326,8 +1329,8 @@ export class PrimeBankProvider extends PayoutProvider {
         rawResponse: res.data,
       };
     } catch (err) {
-      this.logger.error(`Prime Bank payout failed: ${err.message}`);
-      return { success: false, status: 'failed', message: err.message };
+      this.logger.error(`Prime Bank payout failed: ${(err as any).message}`);
+      return { success: false, status: 'failed', message: (err as any).message };
     }
   }
 
@@ -1350,7 +1353,7 @@ export class PrimeBankProvider extends PayoutProvider {
         rawResponse: res.data,
       };
     } catch (err) {
-      return { success: false, status: 'failed', message: err.message };
+      return { success: false, status: 'failed', message: (err as any).message };
     }
   }
 
@@ -1370,8 +1373,8 @@ export class PrimeBankProvider extends PayoutProvider {
 @Injectable()
 export class StandardBankProvider extends PayoutProvider {
   protected readonly providerCode = 'standard_bank';
-  private api: AxiosInstance;
-  private config: ProviderConfig;
+  private api!: AxiosInstance;
+  private config!: ProviderConfig;
 
   async initialize(config: ProviderConfig): Promise<void> {
     this.config = config;
@@ -1455,8 +1458,8 @@ export class StandardBankProvider extends PayoutProvider {
         rawResponse: res.data,
       };
     } catch (err) {
-      this.logger.error(`Standard Bank payout failed: ${err.message}`);
-      return { success: false, status: 'failed', message: err.message };
+      this.logger.error(`Standard Bank payout failed: ${(err as any).message}`);
+      return { success: false, status: 'failed', message: (err as any).message };
     }
   }
 
@@ -1480,7 +1483,7 @@ export class StandardBankProvider extends PayoutProvider {
         rawResponse: res.data,
       };
     } catch (err) {
-      return { success: false, status: 'failed', message: err.message };
+      return { success: false, status: 'failed', message: (err as any).message };
     }
   }
 
@@ -1507,9 +1510,9 @@ export class StandardBankProvider extends PayoutProvider {
 @Injectable()
 export class UcbProvider extends PayoutProvider {
   protected readonly providerCode = 'ucb';
-  private api: AxiosInstance;
-  private config: ProviderConfig;
-  private sessionId: string;
+  private api!: AxiosInstance;
+  private config!: ProviderConfig;
+  private sessionId!: string;
 
   async initialize(config: ProviderConfig): Promise<void> {
     this.config = config;
@@ -1581,8 +1584,8 @@ export class UcbProvider extends PayoutProvider {
         rawResponse: res.data,
       };
     } catch (err) {
-      this.logger.error(`UCB payout failed: ${err.message}`);
-      return { success: false, status: 'failed', message: err.message };
+      this.logger.error(`UCB payout failed: ${(err as any).message}`);
+      return { success: false, status: 'failed', message: (err as any).message };
     }
   }
 
@@ -1603,7 +1606,7 @@ export class UcbProvider extends PayoutProvider {
         rawResponse: res.data,
       };
     } catch (err) {
-      return { success: false, status: 'failed', message: err.message };
+      return { success: false, status: 'failed', message: (err as any).message };
     }
   }
 
@@ -1623,11 +1626,11 @@ export class UcbProvider extends PayoutProvider {
 @Injectable()
 export class DhakaBankProvider extends PayoutProvider {
   protected readonly providerCode = 'dhaka_bank';
-  private config: ProviderConfig;
-  private publicApi: AxiosInstance;
-  private secureApi: AxiosInstance;
-  private accessToken: string;
-  private tokenExpiry: Date;
+  private config!: ProviderConfig;
+  private publicApi!: AxiosInstance;
+  private secureApi!: AxiosInstance;
+  private accessToken!: string;
+  private tokenExpiry!: Date;
 
   async initialize(config: ProviderConfig): Promise<void> {
     this.config = config;
@@ -1703,8 +1706,8 @@ export class DhakaBankProvider extends PayoutProvider {
         rawResponse: res.data,
       };
     } catch (err) {
-      this.logger.error(`Dhaka Bank payout failed: ${err.message}`);
-      return { success: false, status: 'failed', message: err.message };
+      this.logger.error(`Dhaka Bank payout failed: ${(err as any).message}`);
+      return { success: false, status: 'failed', message: (err as any).message };
     }
   }
 
@@ -1730,7 +1733,7 @@ export class DhakaBankProvider extends PayoutProvider {
         rawResponse: res.data,
       };
     } catch (err) {
-      return { success: false, status: 'failed', message: err.message };
+      return { success: false, status: 'failed', message: (err as any).message };
     }
   }
 
@@ -1750,8 +1753,8 @@ export class DhakaBankProvider extends PayoutProvider {
 @Injectable()
 export class AblProvider extends PayoutProvider {
   protected readonly providerCode = 'abl';
-  private api: AxiosInstance;
-  private config: ProviderConfig;
+  private api!: AxiosInstance;
+  private config!: ProviderConfig;
 
   async initialize(config: ProviderConfig): Promise<void> {
     this.config = config;
@@ -1862,8 +1865,8 @@ export class AblProvider extends PayoutProvider {
         rawResponse: transferRes.data,
       };
     } catch (err) {
-      this.logger.error(`ABL payout failed: ${err.message}`);
-      return { success: false, status: 'failed', message: err.message };
+      this.logger.error(`ABL payout failed: ${(err as any).message}`);
+      return { success: false, status: 'failed', message: (err as any).message };
     }
   }
 
@@ -1886,7 +1889,7 @@ export class AblProvider extends PayoutProvider {
         rawResponse: res.data,
       };
     } catch (err) {
-      return { success: false, status: 'failed', message: err.message };
+      return { success: false, status: 'failed', message: (err as any).message };
     }
   }
 
@@ -1911,8 +1914,8 @@ export class AblProvider extends PayoutProvider {
 @Injectable()
 export class FaysalBankProvider extends PayoutProvider {
   protected readonly providerCode = 'faysal_bank';
-  private api: AxiosInstance;
-  private config: ProviderConfig;
+  private api!: AxiosInstance;
+  private config!: ProviderConfig;
 
   async initialize(config: ProviderConfig): Promise<void> {
     this.config = config;
@@ -2027,8 +2030,8 @@ export class FaysalBankProvider extends PayoutProvider {
         rawResponse: remitRes.data,
       };
     } catch (err) {
-      this.logger.error(`Faysal Bank payout failed: ${err.message}`);
-      return { success: false, status: 'failed', message: err.message };
+      this.logger.error(`Faysal Bank payout failed: ${(err as any).message}`);
+      return { success: false, status: 'failed', message: (err as any).message };
     }
   }
 
@@ -2065,7 +2068,7 @@ export class FaysalBankProvider extends PayoutProvider {
         rawResponse: res.data,
       };
     } catch (err) {
-      return { success: false, status: 'failed', message: err.message };
+      return { success: false, status: 'failed', message: (err as any).message };
     }
   }
 

@@ -37,24 +37,23 @@ export class GdprExportService {
         id: tx.id,
         status: tx.status,
         amount: tx.amount,
-        sourceCurrency: tx.sourceCurrency,
+        currency: tx.currency,
         targetCurrency: tx.targetCurrency,
-        fxRate: tx.fxRate,
-        fee: tx.fee,
+        exchangeRate: tx.exchangeRate,
+        feeAmount: tx.feeAmount,
         recipientName: tx.recipientName,
         recipientAccount: tx.recipientAccount,
         createdAt: tx.createdAt,
         completedAt: tx.completedAt,
-        providerName: tx.providerName,
-        providerReference: tx.providerReference,
+        providerId: tx.providerId,
+        providerTransactionId: tx.providerTransactionId,
       })),
       metadata: {
         totalTransactions: transactions.length,
         totalAmountSent: transactions
           .filter(tx => tx.status === 'completed')
           .reduce((sum, tx) => sum + parseFloat(tx.amount as string), 0),
-        corridorsUsed: [...new Set(transactions.map(tx => tx.corridor))],
-        providersUsed: [...new Set(transactions.map(tx => tx.providerName).filter(Boolean))],
+        providersUsed: [...new Set(transactions.map(tx => tx.providerId).filter(Boolean))],
       },
     };
 

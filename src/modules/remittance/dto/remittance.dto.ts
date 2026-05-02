@@ -14,39 +14,39 @@ import {
 export class RemittanceQuoteDto {
   @IsString()
   @MinLength(2)
-  corridor: string;
+  corridor!: string;
 
   @IsNumber()
   @IsPositive()
-  amount: number;
+  amount!: number;
 
   @IsString()
   @Length(3, 3)
-  sourceCurrency: string;
+  sourceCurrency!: string;
 
   @IsString()
   @Length(3, 3)
-  targetCurrency: string;
+  targetCurrency!: string;
 
   @IsString()
-  payoutMethod: string;
+  payoutMethod!: string;
 }
 
 export class InitiatePayoutDto {
   @IsUUID('4')
-  routeId: string;
+  routeId!: string;
 
   @IsNumber()
   @IsPositive()
-  amount: number;
+  amount!: number;
 
   @IsString()
   @MinLength(2)
-  recipientName: string;
+  recipientName!: string;
 
   @IsString()
   @MinLength(5)
-  recipientAccount: string;
+  recipientAccount!: string;
 
   @IsOptional()
   @IsString()
@@ -72,8 +72,8 @@ export class InitiatePayoutDto {
 
 export class WebhookPayloadDto {
   @IsString()
-  providerCode: string;
+  providerCode!: string;
 
   @IsOptional()
-  payload: any;
+  payload?: any;
 }

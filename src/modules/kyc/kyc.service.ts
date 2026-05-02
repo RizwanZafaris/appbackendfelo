@@ -350,10 +350,9 @@ export class KycService {
     // Store document / review metadata in kycDocuments for audit.
     await this.db.insert(kycDocuments).values({
       userId,
-      docType: 'other',
-      fileUrl: `sumsub://applicant/${applicantId}`,
-      status: this.mapToDocumentStatus(mappedStatus),
-      vendorResponse: {
+      applicantId,
+      reviewStatus: this.mapToDocumentStatus(mappedStatus),
+      reviewResult: {
         provider: 'sumsub',
         applicantId,
         webhookType: type,
@@ -361,6 +360,7 @@ export class KycService {
         reviewResult: reviewResult ?? {},
         receivedAt: new Date().toISOString(),
       },
+      webhookPayload: (payload ?? {}) as unknown as Record<string, unknown>,
     });
 
     this.logger.log(`Updated KYC status for user ${userId} → ${mappedStatus}`);

@@ -1,6 +1,7 @@
 import { Controller, Get, Injectable } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { Inject } from '@nestjs/common';
+import { sql } from 'drizzle-orm';
 import { Drizzle, DRIZZLE } from '@/common/db/db.module';
 import { PayoutProviderFactory } from '@/modules/remittance/providers/provider-factory.service';
 
@@ -30,10 +31,10 @@ export class HealthController {
     // Database check
     const dbStart = Date.now();
     try {
-      await this.db.execute('SELECT 1');
+      await this.db.execute(sql`SELECT 1`);
       checks.database = { status: 'ok', latency: Date.now() - dbStart };
-    } catch (error) {
-      checks.database = { status: 'error', latency: Date.now() - dbStart, message: error.message };
+    } catch (error: any) {
+      checks.database = { status: 'error', latency: Date.now() - dbStart, message: error?.message };
     }
 
     // Provider check
@@ -45,11 +46,11 @@ export class HealthController {
         latency: Date.now() - providerStart,
         message: `${providers.size} providers loaded`,
       };
-    } catch (error) {
+    } catch (error: any) {
       checks.providers = {
         status: 'error',
         latency: Date.now() - providerStart,
-        message: error.message,
+        message: error?.message,
       };
     }
 

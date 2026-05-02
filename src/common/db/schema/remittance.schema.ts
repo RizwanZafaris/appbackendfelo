@@ -1,4 +1,3 @@
-
 import { pgTable, uuid, varchar, boolean, jsonb, integer, timestamp, text, numeric } from 'drizzle-orm/pg-core';
 
 export const remittanceProviders = pgTable('remittance_providers', {
@@ -66,6 +65,31 @@ export const remittanceTransactions = pgTable('remittance_transactions', {
   webhookAttempts: integer('webhook_attempts').default(0),
   completedAt: timestamp('completed_at'),
   failedAt: timestamp('failed_at'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+export const profiles = pgTable('profiles', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id').notNull().unique(),
+  email: varchar('email', { length: 255 }).notNull(),
+  displayName: varchar('display_name', { length: 100 }),
+  phone: varchar('phone', { length: 50 }),
+  kycStatus: varchar('kyc_status', { length: 20 }).default('pending').notNull(),
+  sumsubApplicantId: varchar('sumsub_applicant_id', { length: 100 }),
+  kycCompletedAt: timestamp('kyc_completed_at'),
+  kycRejectedAt: timestamp('kyc_rejected_at'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+export const kycDocuments = pgTable('kyc_documents', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id').references(() => profiles.id).notNull(),
+  applicantId: varchar('applicant_id', { length: 100 }).notNull(),
+  reviewStatus: varchar('review_status', { length: 20 }).notNull(),
+  reviewResult: jsonb('review_result').$type<Record<string, unknown>>(),
+  webhookPayload: jsonb('webhook_payload').$type<Record<string, unknown>>(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });

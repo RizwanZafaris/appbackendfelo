@@ -97,7 +97,7 @@ export class PayoutProviderFactory implements OnModuleInit {
         supportedCorridors: row.supportedCorridors as string[],
         supportedCurrencies: row.supportedCurrencies as string[],
         payoutMethods: row.payoutMethods as string[],
-        rateLimitPerMin: row.rateLimitPerMin,
+        rateLimitPerMin: row.rateLimitPerMin ?? 60,
       };
 
       const provider = this.createProvider(row.providerCode);
@@ -108,7 +108,7 @@ export class PayoutProviderFactory implements OnModuleInit {
           this.configs.set(row.id, config);
           this.logger.log(`Loaded provider: ${row.name} (${row.providerCode})`);
         } catch (err) {
-          this.logger.error(`Failed to initialize provider ${row.name}: ${err.message}`);
+          this.logger.error(`Failed to initialize provider ${row.name}: ${(err as any).message}`);
         }
       }
     }
@@ -166,11 +166,11 @@ export class PayoutProviderFactory implements OnModuleInit {
         providerId: r.providerId,
         providerName: this.configs.get(r.providerId)?.name || 'Unknown',
         payoutMethod: r.payoutMethod,
-        feeBps: r.feeBps,
-        fxMarkupBps: r.fxMarkupBps,
-        minAmount: parseFloat(r.minAmount as string),
-        maxAmount: parseFloat(r.maxAmount as string),
-        estimatedMinutes: r.estimatedMinutes,
+        feeBps: r.feeBps ?? 0,
+        fxMarkupBps: r.fxMarkupBps ?? 0,
+        minAmount: parseFloat(r.minAmount as string) || 0,
+        maxAmount: parseFloat(r.maxAmount as string) || 0,
+        estimatedMinutes: r.estimatedMinutes ?? 30,
         enabled: r.enabled,
       }));
   }
