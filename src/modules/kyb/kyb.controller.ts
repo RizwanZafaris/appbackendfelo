@@ -1,6 +1,9 @@
-import { Controller, Get, Post, Patch, Body, Param, Query } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { KybService } from './kyb.service';
 import { CreateBusinessDto, AddUboDto, UploadBusinessDocDto, KybReviewDto, KybQueueQueryDto } from './kyb.dto';
+import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
+import { CurrentUser } from '@/common/decorators/current-user.decorator';
+import { RequestUser } from '@/common/types/request-user';
 
 @Controller('kyb')
 export class KybController {
@@ -43,6 +46,7 @@ export class KybController {
 }
 
 @Controller('admin/kyb')
+@UseGuards(JwtAuthGuard)
 export class AdminKybController {
   constructor(private readonly kybService: KybService) {}
 
@@ -57,8 +61,11 @@ export class AdminKybController {
   }
 
   @Patch(':id/status')
-  async reviewBusiness(@Param('id') id: string, @Body() dto: KybReviewDto) {
-    const reviewerId = 'system'; // TODO: get from auth context
-    return this.kybService.reviewBusiness(id, { ...dto, reviewerId });
+  async reviewBusiness(
+    @Param('id') id: string,
+    @Body() dto: KybReviewDto,
+    @CurrentUser() user: RequestUser,
+  ) {
+    return this.kybService.reviewBusiness(id, { ...dto, reviewerId: user.id });
   }
 }

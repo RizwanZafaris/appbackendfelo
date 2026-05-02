@@ -7,6 +7,7 @@ import { BookDealDto } from './dto/book-deal.dto';
 import { CursorPaginationDto } from './dto/cursor-pagination.dto';
 import { Roles } from '@/common/decorators/roles.decorator';
 import { RolesGuard } from '@/common/guards/roles.guard';
+import type { Request } from 'express';
 
 @Controller('treasury')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -32,7 +33,7 @@ export class TreasuryController {
         marginBps: body.marginBps,
       },
       req.ip,
-      req.headers['user-agent'],
+      req.headers['user-agent'] as string,
     );
     return result;
   }
@@ -48,7 +49,7 @@ export class TreasuryController {
       Number(user.id),
       Number(id),
       req.ip,
-      req.headers['user-agent'],
+      req.headers['user-agent'] as string,
     );
     return { success: true };
   }

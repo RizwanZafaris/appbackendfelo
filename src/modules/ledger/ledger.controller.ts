@@ -6,6 +6,7 @@ import { RequestUser } from '@/common/types/request-user';
 import { CursorPaginationParams } from '@/common/pagination';
 import { IsString, IsInt, IsOptional, IsArray, ValidateNested, Length } from 'class-validator';
 import { Type } from 'class-transformer';
+import type { Request } from 'express';
 
 class PostLineDto {
   @IsInt()
@@ -74,7 +75,7 @@ export class LedgerController {
       body.transactionId,
       lines,
       req.ip,
-      req.headers['user-agent'],
+      req.headers['user-agent'] as string,
     );
 
     return { success: true };
@@ -92,7 +93,7 @@ export class LedgerController {
       Number(user.id),
       txnId,
       req.ip,
-      req.headers['user-agent'],
+      req.headers['user-agent'] as string,
     );
     return { success: true };
   }
