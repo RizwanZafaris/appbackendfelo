@@ -30,8 +30,7 @@ const drizzleProvider: Provider = {
 
 const dbStringProvider: Provider = {
   provide: 'DB',
-  inject: [DRIZZLE],
-  useFactory: (db: Drizzle) => db,
+  useExisting: DRIZZLE,
 };
 
 @Global()
