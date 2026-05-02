@@ -97,7 +97,7 @@
       "^.+\\.(t|j)s$": "ts-jest"
     },
     "transformIgnorePatterns": [
-      "node_modules/(?!jose|@scure|otplib)"
+      "node_modules/(?!jose|@scure|otplib|@noble|@otplib)"
     ],
     "moduleNameMapper": {
       "^@/(.*)$": "<rootDir>/src/$1",
