@@ -16,6 +16,8 @@ import { RequestUser } from '@/common/types/request-user';
 import { PayoutProviderFactory } from './providers/provider-factory.service';
 import { RemittanceService } from './remittance.service';
 
+import { RemittanceQuoteDto, InitiatePayoutDto } from './dto/remittance.dto';
+
 @ApiTags('remittance')
 @Controller('remittance')
 @UseGuards(SupabaseJwtGuard)
@@ -41,13 +43,7 @@ export class RemittanceController {
   @ApiOperation({ summary: 'Get FX quote for a remittance' })
   async getQuote(
     @CurrentUser() user: RequestUser,
-    @Body() body: {
-      corridor: string;
-      amount: number;
-      sourceCurrency: string;
-      targetCurrency: string;
-      payoutMethod: string;
-    },
+    @Body() body: RemittanceQuoteDto,
   ) {
     return this.service.getQuote(body);
   }
@@ -56,18 +52,7 @@ export class RemittanceController {
   @ApiOperation({ summary: 'Initiate a remittance payout' })
   async sendRemittance(
     @CurrentUser() user: RequestUser,
-    @Body() body: {
-      routeId: string;
-      amount: number;
-      recipientName: string;
-      recipientAccount: string;
-      recipientPhone?: string;
-      recipientBankCode?: string;
-      recipientBankName?: string;
-      purpose?: string;
-      reference?: string;
-      metadata?: Record<string, unknown>;
-    },
+    @Body() body: InitiatePayoutDto,
   ) {
     return this.service.initiatePayout({
       userId: user.id,

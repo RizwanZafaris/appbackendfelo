@@ -6,6 +6,8 @@ import { AdminAuthService } from './admin-auth.service';
 import { ConfigRegistryService } from './config-registry.service';
 import { VendorCredentialsService } from './vendor-credentials.service';
 
+import { AdminRegisterDto, AdminLoginDto, AdminRefreshDto, MFASetupDto, MFAVerifyDto, MFADisableDto } from './dto/admin.dto';
+
 @UseGuards(SupabaseJwtGuard)
 @Controller('admin')
 export class AdminController {
@@ -17,17 +19,17 @@ export class AdminController {
 
   // ─── Auth (JWT-based) ─────────────────────────────────
   @Post('auth/register')
-  register(@Body() body: { email: string; displayName: string; password: string; role?: string }) {
+  register(@Body() body: AdminRegisterDto) {
     return this.adminAuth.register(body.email, body.displayName, body.password, body.role);
   }
 
   @Post('auth/login')
-  async login(@Body() body: { email: string; password: string; totpToken?: string }) {
+  async login(@Body() body: AdminLoginDto) {
     return this.adminAuth.login(body.email, body.password, body.totpToken);
   }
 
   @Post('auth/refresh')
-  refreshToken(@Body() body: { refreshToken: string }) {
+  refreshToken(@Body() body: AdminRefreshDto) {
     return this.adminAuth.refreshAccessToken(body.refreshToken);
   }
 
@@ -40,17 +42,17 @@ export class AdminController {
 
   // ─── MFA ────────────────────────────────────────────────
   @Post('auth/mfa/setup')
-  async setupMFA(@Body() body: { adminId: string }) {
+  async setupMFA(@Body() body: MFASetupDto) {
     return this.adminAuth.setupMFA(body.adminId);
   }
 
   @Post('auth/mfa/verify')
-  async verifyMFA(@Body() body: { adminId: string; token: string }) {
+  async verifyMFA(@Body() body: MFAVerifyDto) {
     return this.adminAuth.verifyMFASetup(body.adminId, body.token);
   }
 
   @Post('auth/mfa/disable')
-  async disableMFA(@Body() body: { adminId: string; password: string }) {
+  async disableMFA(@Body() body: MFADisableDto) {
     return this.adminAuth.disableMFA(body.adminId, body.password);
   }
 
