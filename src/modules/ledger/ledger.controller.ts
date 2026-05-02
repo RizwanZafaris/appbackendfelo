@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Param, Query, UseGuards, Req, Body } from '@nestjs/common';
 import { LedgerService, LedgerLine } from './ledger.service';
-import { SupabaseJwtGuard } from '@/common/guards/supabase-jwt.guard';
+import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { RequestUser } from '@/common/types/request-user';
 import { CursorPaginationParams } from '@/common/pagination';
@@ -32,7 +32,7 @@ class PostEntryDto {
 }
 
 @Controller('ledger')
-@UseGuards(SupabaseJwtGuard)
+@UseGuards(JwtAuthGuard)
 export class LedgerController {
   constructor(private readonly ledgerService: LedgerService) {}
 
@@ -73,8 +73,8 @@ export class LedgerController {
       Number(user.id),
       body.transactionId,
       lines,
-      (req as any).ip,
-      (req as any).headers['user-agent'],
+      req.ip,
+      req.headers['user-agent'],
     );
 
     return { success: true };
@@ -91,8 +91,8 @@ export class LedgerController {
     await this.ledgerService.reverseEntry(
       Number(user.id),
       txnId,
-      (req as any).ip,
-      (req as any).headers['user-agent'],
+      req.ip,
+      req.headers['user-agent'],
     );
     return { success: true };
   }

@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Param, Query, Body, UseGuards, Req } from '@nestjs/common';
 import { TreasuryService } from './treasury.service';
-import { SupabaseJwtGuard } from '@/common/guards/supabase-jwt.guard';
+import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
 import { RequestUser } from '@/common/types/request-user';
 import { BookDealDto } from './dto/book-deal.dto';
@@ -9,7 +9,7 @@ import { Roles } from '@/common/decorators/roles.decorator';
 import { RolesGuard } from '@/common/guards/roles.guard';
 
 @Controller('treasury')
-@UseGuards(SupabaseJwtGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class TreasuryController {
   constructor(private readonly treasuryService: TreasuryService) {}
 
@@ -31,8 +31,8 @@ export class TreasuryController {
         marketRate: body.marketRate,
         marginBps: body.marginBps,
       },
-      (req as any).ip,
-      (req as any).headers['user-agent'],
+      req.ip,
+      req.headers['user-agent'],
     );
     return result;
   }
@@ -47,8 +47,8 @@ export class TreasuryController {
     await this.treasuryService.settleDeal(
       Number(user.id),
       Number(id),
-      (req as any).ip,
-      (req as any).headers['user-agent'],
+      req.ip,
+      req.headers['user-agent'],
     );
     return { success: true };
   }
