@@ -1814,6 +1814,9 @@ export const treasuryActors = pgTable(
   'treasury_actors',
   {
     id: serial('id').primaryKey(),
+    // Maps to Supabase auth.users.id. Replaces the old hash-of-uuid logic
+    // that produced cross-user IDOR collisions in disbursement.controller.ts.
+    userUuid: uuid('user_uuid'),
     email: varchar('email', { length: 255 }).notNull().unique(),
     passwordHash: varchar('password_hash', { length: 255 }),
     status: userStatusEnum('status').notNull().default('active'),
@@ -1823,6 +1826,7 @@ export const treasuryActors = pgTable(
   },
   (table) => ({
     emailIdx: uniqueIndex('treasury_actors_email_idx').on(table.email),
+    userUuidIdx: uniqueIndex('treasury_actors_user_uuid_uidx').on(table.userUuid),
   }),
 );
 
@@ -1881,6 +1885,10 @@ export const ledgerEntries: any = pgTable(
     currency: varchar('currency', { length: 3 }).notNull(),
     postedAt: timestamp('posted_at', { withTimezone: true }).defaultNow().notNull(),
     reversalOf: integer('reversal_of'),
+    // Idempotency: caller-supplied unique key. Partial UNIQUE index in the
+    // 012_launch_readiness migration prevents double-posting of the same
+    // logical write under retry.
+    idempotencyKey: varchar('idempotency_key', { length: 128 }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({
@@ -1888,6 +1896,7 @@ export const ledgerEntries: any = pgTable(
     accountIdx: index('ledger_entries_ledger_account_id_idx').on(table.ledgerAccountId),
     postedAtIdx: index('ledger_entries_posted_at_idx').on(table.postedAt),
     reversalIdx: index('ledger_entries_reversal_of_idx').on(table.reversalOf),
+    idemIdx: uniqueIndex('ledger_entries_idem_uidx').on(table.idempotencyKey),
   }),
 );
 
@@ -1920,12 +1929,15 @@ export const deals = pgTable(
     status: dealStatusEnum('status').notNull().default('draft'),
     bookedAt: timestamp('booked_at', { withTimezone: true }),
     settledAt: timestamp('settled_at', { withTimezone: true }),
+    idempotencyKey: varchar('idempotency_key', { length: 128 }),
+    version: integer('version').notNull().default(1),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({
     statusIdx: index('deals_status_idx').on(table.status),
     currenciesIdx: index('deals_currencies_idx').on(table.sourceCurrency, table.targetCurrency),
+    idemIdx: uniqueIndex('deals_idem_uidx').on(table.idempotencyKey),
   }),
 );
 
@@ -1959,6 +1971,8 @@ export const disbursementOrders = pgTable(
     providerRef: varchar('provider_ref', { length: 255 }),
     sentAt: timestamp('sent_at', { withTimezone: true }),
     receivedAt: timestamp('received_at', { withTimezone: true }),
+    idempotencyKey: varchar('idempotency_key', { length: 128 }),
+    version: integer('version').notNull().default(1),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -1966,6 +1980,90 @@ export const disbursementOrders = pgTable(
     actorIdx: index('disbursement_orders_actor_id_idx').on(table.actorId),
     dealIdx: index('disbursement_orders_deal_id_idx').on(table.dealId),
     statusIdx: index('disbursement_orders_status_idx').on(table.status),
+    actorStatusCreatedIdx: index('disbursement_orders_actor_status_created_idx').on(
+      table.actorId,
+      table.status,
+      table.createdAt,
+    ),
+    idemIdx: uniqueIndex('disbursement_orders_idem_uidx').on(
+      table.actorId,
+      table.idempotencyKey,
+    ),
+  }),
+);
+
+// ─────────────────────────────────────────────────────────────────────────
+// Webhook events — replay protection per inbound provider call.
+// ─────────────────────────────────────────────────────────────────────────
+export const webhookEvents = pgTable(
+  'webhook_events',
+  {
+    id: serial('id').primaryKey(),
+    provider: varchar('provider', { length: 64 }).notNull(),
+    eventId: varchar('event_id', { length: 255 }).notNull(),
+    signature: varchar('signature', { length: 512 }).notNull(),
+    receivedAt: timestamp('received_at', { withTimezone: true }).defaultNow().notNull(),
+    processedAt: timestamp('processed_at', { withTimezone: true }),
+    status: varchar('status', { length: 32 }).notNull().default('received'),
+    payload: jsonb('payload').notNull(),
+    error: text('error'),
+  },
+  (table) => ({
+    providerEventIdx: uniqueIndex('webhook_events_provider_event_uidx').on(
+      table.provider,
+      table.eventId,
+    ),
+    receivedAtIdx: index('webhook_events_received_at_idx').on(table.receivedAt),
+    statusIdx: index('webhook_events_status_idx').on(table.status),
+  }),
+);
+
+// ─────────────────────────────────────────────────────────────────────────
+// Outbox — at-least-once delivery for outbound provider/notification calls.
+// ─────────────────────────────────────────────────────────────────────────
+export const outboxEvents = pgTable(
+  'outbox_events',
+  {
+    id: serial('id').primaryKey(),
+    aggregate: varchar('aggregate', { length: 64 }).notNull(),
+    aggregateId: varchar('aggregate_id', { length: 64 }).notNull(),
+    eventType: varchar('event_type', { length: 128 }).notNull(),
+    payload: jsonb('payload').notNull(),
+    status: varchar('status', { length: 32 }).notNull().default('pending'),
+    attempts: integer('attempts').notNull().default(0),
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).defaultNow().notNull(),
+    lastError: text('last_error'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    statusNextIdx: index('outbox_events_status_next_idx').on(table.status, table.nextAttemptAt),
+    aggregateIdx: index('outbox_events_aggregate_idx').on(table.aggregate, table.aggregateId),
+  }),
+);
+
+// ─────────────────────────────────────────────────────────────────────────
+// Sanctions / PEP screening — every disbursement must produce a row.
+// outcome ∈ ('clear','review','block','error'). Anything other than
+// 'clear' MUST stop the disbursement.
+// ─────────────────────────────────────────────────────────────────────────
+export const sanctionsScreenings = pgTable(
+  'sanctions_screenings',
+  {
+    id: serial('id').primaryKey(),
+    userUuid: uuid('user_uuid'),
+    recipientHash: varchar('recipient_hash', { length: 128 }),
+    listName: varchar('list_name', { length: 64 }).notNull(),
+    matchScore: numeric('match_score', { precision: 5, scale: 2 }).notNull(),
+    outcome: varchar('outcome', { length: 32 }).notNull(),
+    provider: varchar('provider', { length: 64 }).notNull(),
+    rawResponse: jsonb('raw_response'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    userIdx: index('sanctions_screenings_user_idx').on(table.userUuid),
+    outcomeIdx: index('sanctions_screenings_outcome_idx').on(table.outcome),
+    recipientIdx: index('sanctions_screenings_recipient_idx').on(table.recipientHash),
   }),
 );
 
@@ -1979,3 +2077,9 @@ export type NewDeal = typeof deals.$inferInsert;
 export type DisbursementMethod = typeof disbursementMethods.$inferSelect;
 export type DisbursementOrder = typeof disbursementOrders.$inferSelect;
 export type NewDisbursementOrder = typeof disbursementOrders.$inferInsert;
+export type WebhookEvent = typeof webhookEvents.$inferSelect;
+export type NewWebhookEvent = typeof webhookEvents.$inferInsert;
+export type OutboxEvent = typeof outboxEvents.$inferSelect;
+export type NewOutboxEvent = typeof outboxEvents.$inferInsert;
+export type SanctionsScreening = typeof sanctionsScreenings.$inferSelect;
+export type NewSanctionsScreening = typeof sanctionsScreenings.$inferInsert;
