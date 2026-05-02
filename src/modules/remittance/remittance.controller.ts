@@ -7,7 +7,7 @@ import {
   Query,
   UseGuards,
   Req,
-  Patch,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { SupabaseJwtGuard } from '@/common/guards/supabase-jwt.guard';
@@ -18,6 +18,8 @@ import { RemittanceService } from './remittance.service';
 
 import { RemittanceQuoteDto, InitiatePayoutDto } from './dto/remittance.dto';
 
+import { WebhookSignatureService } from '@/common/webhook/webhook-signature.service';
+
 @ApiTags('remittance')
 @Controller('remittance')
 @UseGuards(SupabaseJwtGuard)
@@ -25,6 +27,7 @@ export class RemittanceController {
   constructor(
     private readonly factory: PayoutProviderFactory,
     private readonly service: RemittanceService,
+    private readonly webhookSignature: WebhookSignatureService,
   ) {}
 
   @Get('routes')
@@ -104,6 +107,26 @@ export class RemittanceController {
     @Req() req: Request,
     @Body() body: unknown,
   ) {
+    const rawBody = (req as any).rawBody || JSON.stringify(body);
+    const signature = req.headers['x-webhook-signature'] as string ||
+                      req.headers['stripe-signature'] as string;
+    
+    // In production, verify webhook signature
+    if (process.env.NODE_ENV === 'production' && signature) {
+      const secret = process.env[`${providerCode.toUpperCase()}_WEBHOOK_SECRET`];
+      if (secret) {
+        const isValid = this.webhookSignature.verifySignature(
+          rawBody,
+          signature,
+          secret,
+          providerCode,
+        );
+        if (!isValid) {
+          throw new UnauthorizedException('Invalid webhook signature');
+        }
+      }
+    }
+
     return this.service.handleWebhook(providerCode, body, req.headers);
   }
 }

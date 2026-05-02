@@ -23,6 +23,7 @@ import {
   AblProvider,
   FaysalBankProvider,
 } from './providers/payout.providers';
+import { WebhookSignatureService } from '@/common/webhook/webhook-signature.service';
 
 @Module({
   controllers: [RemittanceController, RemittanceAdminController],
@@ -30,6 +31,7 @@ import {
     RemittanceService,
     RemittanceReceiptService,
     PayoutProviderFactory,
+    WebhookSignatureService,
     PaymobProvider,
     SamsaraProvider,
     KhaltiProvider,

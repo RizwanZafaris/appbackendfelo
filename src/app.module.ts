@@ -5,6 +5,7 @@ import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { DrizzleModule } from '@/common/db/db.module';
 import { CircuitBreakerModule } from '@/common/circuit-breaker/circuit-breaker.module';
 import { PrometheusModule } from '@/common/metrics/prometheus.module';
+import { ComplianceModule } from '@/common/compliance/compliance.module';
 import { AuthModule } from '@/modules/auth/auth.module';
 import { UsersModule } from '@/modules/users/users.module';
 import { KycModule } from '@/modules/kyc/kyc.module';
@@ -46,6 +47,7 @@ import config from '@/config/config';
     SmsModule,
     CircuitBreakerModule,
     PrometheusModule,
+    ComplianceModule,
   ],
   providers: [
     {
