@@ -1743,3 +1743,368 @@ export class DhakaBankProvider extends PayoutProvider {
     }
   }
 }
+
+// ============================================
+// ABL (ALLIED BANK LIMITED) PROVIDER (Pakistan - SOAP)
+// ============================================
+@Injectable()
+export class AblProvider extends PayoutProvider {
+  protected readonly providerCode = 'abl';
+  private api: AxiosInstance;
+  private config: ProviderConfig;
+
+  async initialize(config: ProviderConfig): Promise<void> {
+    this.config = config;
+    this.api = axios.create({
+      baseURL: config.baseUrl,
+      timeout: 30000,
+      headers: {
+        'Content-Type': 'text/xml; charset=utf-8',
+        'SOAPAction': config.baseUrl.includes('hrscloud') ? 'http://hrscloud/pushservice/get_acct_title' : '',
+      },
+    });
+  }
+
+  private buildSoapAuth(): string {
+    const { agentCode, password, userId } = this.config.credentials;
+    return `
+        <auth>
+          <agent_code>${agentCode}</agent_code>
+          <password>${password}</password>
+          <user_id>${userId}</user_id>
+        </auth>`;
+  }
+
+  private buildSoapEnvelope(body: string): string {
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tns="http://hrscloud/pushservice/">
+  <soapenv:Header/>
+  <soapenv:Body>
+    ${body}
+  </soapenv:Body>
+</soapenv:Envelope>`;
+  }
+
+  private extractXmlValue(xml: string, tag: string): string {
+    const match = xml.match(new RegExp(`<${tag}>(.*?)</${tag}>`, 'i'));
+    return match ? match[1] : '';
+  }
+
+  async sendPayout(request: PayoutRequest): Promise<PayoutResponse> {
+    try {
+      // Step 1: Get account title (validation)
+      const titleSoap = this.buildSoapEnvelope(`
+        <tns:get_acct_title>
+          ${this.buildSoapAuth()}
+          <cnic>${request.metadata?.beneficiaryCnic || ''}</cnic>
+          <Beneficiary_Account>${request.recipientAccount}</Beneficiary_Account>
+          <branchid>${request.metadata?.branchId || ''}</branchid>
+          <Beneficiary_Bank>${request.recipientBankName || ''}</Beneficiary_Bank>
+          <amount>${request.amount}</amount>
+        </tns:get_acct_title>`);
+
+      const titleRes = await this.api.post('', titleSoap);
+      const titleCode = this.extractXmlValue(titleRes.data, 'Response_Code');
+      const pin = this.extractXmlValue(titleRes.data, 'pin');
+
+      if (titleCode !== '000' && titleCode !== '00') {
+        return {
+          success: false,
+          status: 'failed',
+          message: this.extractXmlValue(titleRes.data, 'Response_Text') || 'Account validation failed',
+          rawResponse: titleRes.data,
+        };
+      }
+
+      // Step 2: Send funds transfer
+      const transferSoap = this.buildSoapEnvelope(`
+        <tns:send_online_fundsTransfer>
+          ${this.buildSoapAuth()}
+          <RRN>${request.reference}</RRN>
+          <txns>
+            <transaction_reference_id>${request.reference}</transaction_reference_id>
+            <pin>${pin}</pin>
+            <payment_mode>${request.metadata?.paymentMode || 'ACCOUNT'}</payment_mode>
+            <beneficiary_currency_amount>${request.amount}</beneficiary_currency_amount>
+            <beneficiary_currency>${request.currency}</beneficiary_currency>
+            <beneficiary_bank>${request.recipientBankName || ''}</beneficiary_bank>
+            <beneficiary_account_number>${request.recipientAccount}</beneficiary_account_number>
+            <beneficiary_branch_code>${request.recipientBankCode || ''}</beneficiary_branch_code>
+            <BeneficiaryAccountnoWithIBAN>${request.metadata?.iban || ''}</BeneficiaryAccountnoWithIBAN>
+            <beneficiary_name>${request.recipientName}</beneficiary_name>
+            <beneficiary_branch_name>${request.metadata?.branchName || ''}</beneficiary_branch_name>
+            <beneficiary_branch_address>${request.metadata?.branchAddress || ''}</beneficiary_branch_address>
+            <beneficiary_address>${request.metadata?.beneficiaryAddress || ''}</beneficiary_address>
+            <beneficiary_city>${request.metadata?.beneficiaryCity || ''}</beneficiary_city>
+            <beneficiary_id_no>${request.metadata?.beneficiaryIdNo || ''}</beneficiary_id_no>
+            <Beneficiary_Id_Type>${request.metadata?.beneficiaryIdType || ''}</Beneficiary_Id_Type>
+            <beneficiary_account_title>${request.metadata?.accountTitle || ''}</beneficiary_account_title>
+            <beneficiary_phone>${request.recipientPhone || ''}</beneficiary_phone>
+            <beneficiary_email>${request.metadata?.beneficiaryEmail || ''}</beneficiary_email>
+            <remitter_name>${request.metadata?.senderName || 'Sender'}</remitter_name>
+            <remitter_address>${request.metadata?.senderAddress || ''}</remitter_address>
+            <remitter_city>${request.metadata?.senderCity || ''}</remitter_city>
+            <remitter_country>${request.metadata?.senderCountry || 'AE'}</remitter_country>
+            <remitter_phone>${request.metadata?.senderPhone || ''}</remitter_phone>
+            <remitter_email>${request.metadata?.senderEmail || ''}</remitter_email>
+            <remarks>${request.purpose || 'Home Remittance'}</remarks>
+          </txns>
+        </tns:send_online_fundsTransfer>`);
+
+      const transferRes = await this.api.post('', transferSoap);
+      const transferCode = this.extractXmlValue(transferRes.data, 'Response_Code');
+
+      return {
+        success: transferCode === '000' || transferCode === '00',
+        providerTransactionId: request.reference,
+        status: transferCode === '000' || transferCode === '00' ? 'initiated' : 'failed',
+        message: this.extractXmlValue(transferRes.data, 'Response_Text'),
+        rawResponse: transferRes.data,
+      };
+    } catch (err) {
+      this.logger.error(`ABL payout failed: ${err.message}`);
+      return { success: false, status: 'failed', message: err.message };
+    }
+  }
+
+  async checkStatus(providerTransactionId: string): Promise<PayoutResponse> {
+    try {
+      const soapBody = this.buildSoapEnvelope(`
+        <tns:get_transaction_status>
+          ${this.buildSoapAuth()}
+          <referenceNo>${providerTransactionId}</referenceNo>
+        </tns:get_transaction_status>`);
+
+      const res = await this.api.post('', soapBody);
+      const responseCode = this.extractXmlValue(res.data, 'Response_Code');
+
+      return {
+        success: responseCode === '000' || responseCode === '00',
+        providerTransactionId,
+        status: responseCode === '000' || responseCode === '00' ? 'completed' : 'pending',
+        message: this.extractXmlValue(res.data, 'Response_Text'),
+        rawResponse: res.data,
+      };
+    } catch (err) {
+      return { success: false, status: 'failed', message: err.message };
+    }
+  }
+
+  async validateCredentials(): Promise<boolean> {
+    try {
+      const soapBody = this.buildSoapEnvelope(`
+        <tns:get_agent_accnt_balance>
+          ${this.buildSoapAuth()}
+        </tns:get_agent_accnt_balance>`);
+      const res = await this.api.post('', soapBody);
+      const responseCode = this.extractXmlValue(res.data, 'Response_Code');
+      return responseCode === '000' || responseCode === '00';
+    } catch {
+      return false;
+    }
+  }
+}
+
+// ============================================
+// FAYSAL BANK (FBL) IBFT PROVIDER (Pakistan - REST/SOAP + MD5 Token)
+// ============================================
+@Injectable()
+export class FaysalBankProvider extends PayoutProvider {
+  protected readonly providerCode = 'faysal_bank';
+  private api: AxiosInstance;
+  private config: ProviderConfig;
+
+  async initialize(config: ProviderConfig): Promise<void> {
+    this.config = config;
+    this.api = axios.create({
+      baseURL: config.baseUrl,
+      timeout: 30000,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+  }
+
+  private generateToken(stan: string): { token: string; strDate: string; strTime: string } {
+    const now = new Date();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const seconds = String(now.getSeconds()).padStart(2, '0');
+    const strDate = `${month}${day}`;
+    const strTime = `${hours}${minutes}${seconds}`;
+    const preSharedKey = this.config.credentials.preSharedKey || 'TEST';
+    const raw = `${strDate}${strTime}${preSharedKey}${stan}`;
+    const token = crypto.createHash('md5').update(raw).digest('hex');
+    return { token, strDate, strTime };
+  }
+
+  private generateStan(): string {
+    // 6-digit STAN, unique per day (use reference number suffix or random)
+    return Math.floor(100000 + Math.random() * 900000).toString();
+  }
+
+  async sendPayout(request: PayoutRequest): Promise<PayoutResponse> {
+    try {
+      const stan = this.generateStan();
+      const { token, strDate, strTime } = this.generateToken(stan);
+      const { username, password, apiKey } = this.config.credentials;
+
+      // Step 1: Get account title (validation)
+      const titlePayload = {
+        auth: {
+          username,
+          password,
+          apiKey,
+          token,
+          strDate,
+          strTime,
+          intSTAN: stan,
+        },
+        beneficiaryAccount: request.recipientAccount,
+        beneficiaryBank: request.recipientBankName || '',
+        branchCode: request.recipientBankCode || '',
+        amount: request.amount.toString(),
+      };
+
+      const titleRes = await this.api.post('/services/MiddlewareServices/ESBHrs', titlePayload, {
+        headers: { 'SOAPAction': 'get_acct_title' },
+      });
+
+      const titleData = typeof titleRes.data === 'string' ? this.parseSoapResponse(titleRes.data) : titleRes.data;
+      if (titleData.Response_Code && titleData.Response_Code !== '000' && titleData.Response_Code !== '00') {
+        return {
+          success: false,
+          status: 'failed',
+          message: titleData.Response_Text || 'Account validation failed',
+          rawResponse: titleRes.data,
+        };
+      }
+
+      // Step 2: Post single remittance
+      const remitStan = this.generateStan();
+      const remitToken = this.generateToken(remitStan);
+      const remitPayload = {
+        auth: {
+          username,
+          password,
+          apiKey,
+          token: remitToken.token,
+          strDate: remitToken.strDate,
+          strTime: remitToken.strTime,
+          intSTAN: remitStan,
+        },
+        RIN: request.reference,
+        transactionReferenceId: request.reference,
+        beneficiaryName: request.recipientName,
+        beneficiaryAccountNumber: request.recipientAccount,
+        beneficiaryBank: request.recipientBankName || '',
+        beneficiaryBranchCode: request.recipientBankCode || '',
+        beneficiaryCurrencyAmount: request.amount,
+        beneficiaryCurrency: request.currency,
+        paymentMode: request.metadata?.paymentMode || 'IBFT',
+        remitterName: request.metadata?.senderName || 'Sender',
+        remitterAddress: request.metadata?.senderAddress || '',
+        remitterCity: request.metadata?.senderCity || '',
+        remitterCountry: request.metadata?.senderCountry || 'AE',
+        remitterPhone: request.metadata?.senderPhone || '',
+        remitterEmail: request.metadata?.senderEmail || '',
+        remarks: request.purpose || 'Home Remittance',
+      };
+
+      const remitRes = await this.api.post('/services/MiddlewareServices/ESBHrs', remitPayload, {
+        headers: { 'SOAPAction': 'send_online_fundsTransfer' },
+      });
+
+      const remitData = typeof remitRes.data === 'string' ? this.parseSoapResponse(remitRes.data) : remitRes.data;
+
+      return {
+        success: remitData.Response_Code === '000' || remitData.Response_Code === '00',
+        providerTransactionId: request.reference,
+        status: remitData.Response_Code === '000' || remitData.Response_Code === '00' ? 'initiated' : 'failed',
+        message: remitData.Response_Text || 'Remittance submitted',
+        rawResponse: remitRes.data,
+      };
+    } catch (err) {
+      this.logger.error(`Faysal Bank payout failed: ${err.message}`);
+      return { success: false, status: 'failed', message: err.message };
+    }
+  }
+
+  async checkStatus(providerTransactionId: string): Promise<PayoutResponse> {
+    try {
+      const stan = this.generateStan();
+      const { token, strDate, strTime } = this.generateToken(stan);
+      const { username, password, apiKey } = this.config.credentials;
+
+      const payload = {
+        auth: {
+          username,
+          password,
+          apiKey,
+          token,
+          strDate,
+          strTime,
+          intSTAN: stan,
+        },
+        referenceNo: providerTransactionId,
+      };
+
+      const res = await this.api.post('/services/MiddlewareServices/FRCTxnInq/StatusInquiry', payload, {
+        headers: { 'SOAPAction': 'get_transaction_status' },
+      });
+
+      const data = typeof res.data === 'string' ? this.parseSoapResponse(res.data) : res.data;
+
+      return {
+        success: data.Response_Code === '000' || data.Response_Code === '00',
+        providerTransactionId,
+        status: data.Response_Code === '000' || data.Response_Code === '00' ? 'completed' : 'pending',
+        message: data.Response_Text,
+        rawResponse: res.data,
+      };
+    } catch (err) {
+      return { success: false, status: 'failed', message: err.message };
+    }
+  }
+
+  private parseSoapResponse(xml: string): Record<string, string> {
+    const result: Record<string, string> = {};
+    const tags = ['Response_Code', 'Response_Text', 'pin', 'balance', 'status'];
+    for (const tag of tags) {
+      const match = xml.match(new RegExp(`<${tag}>(.*?)</${tag}>`, 'i'));
+      if (match) result[tag] = match[1];
+    }
+    return result;
+  }
+
+  async validateCredentials(): Promise<boolean> {
+    try {
+      const stan = this.generateStan();
+      const { token, strDate, strTime } = this.generateToken(stan);
+      const { username, password, apiKey } = this.config.credentials;
+
+      const payload = {
+        auth: {
+          username,
+          password,
+          apiKey,
+          token,
+          strDate,
+          strTime,
+          intSTAN: stan,
+        },
+      };
+
+      const res = await this.api.post('/services/MiddlewareServices/ESBHrs', payload, {
+        headers: { 'SOAPAction': 'get_agent_accnt_balance' },
+      });
+
+      const data = typeof res.data === 'string' ? this.parseSoapResponse(res.data) : res.data;
+      return data.Response_Code === '000' || data.Response_Code === '00';
+    } catch {
+      return false;
+    }
+  }
+}

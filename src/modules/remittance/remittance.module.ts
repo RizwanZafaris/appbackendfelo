@@ -19,6 +19,8 @@ import {
   StandardBankProvider,
   UcbProvider,
   DhakaBankProvider,
+  AblProvider,
+  FaysalBankProvider,
 } from './providers/payout.providers';
 
 @Module({
@@ -39,8 +41,8 @@ import {
     BracBankProvider,
     PrimeBankProvider,
     StandardBankProvider,
-    UcbProvider,
-    DhakaBankProvider,
+    AblProvider,
+    FaysalBankProvider,
   ],
   exports: [RemittanceService, PayoutProviderFactory],
 })

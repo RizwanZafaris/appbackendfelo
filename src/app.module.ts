@@ -9,6 +9,7 @@ import { TreasuryModule } from '@/modules/treasury/treasury.module';
 import { LedgerModule } from '@/modules/ledger/ledger.module';
 import { DisbursementModule } from '@/modules/disbursement/disbursement.module';
 import { RemittanceModule } from '@/modules/remittance/remittance.module';
+import { SmsModule } from '@/modules/sms/sms.module';
 import config from '@/config/config';
 
 @Module({
@@ -23,6 +24,7 @@ import config from '@/config/config';
     LedgerModule,
     DisbursementModule,
     RemittanceModule,
+    SmsModule,
   ],
 })
 export class AppModule {}

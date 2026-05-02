@@ -21,6 +21,8 @@ import {
   StandardBankProvider,
   UcbProvider,
   DhakaBankProvider,
+  AblProvider,
+  FaysalBankProvider,
   ProviderConfig,
 } from './payout.providers';
 
@@ -64,6 +66,8 @@ export class PayoutProviderFactory implements OnModuleInit {
     private readonly standardBank: StandardBankProvider,
     private readonly ucb: UcbProvider,
     private readonly dhakaBank: DhakaBankProvider,
+    private readonly abl: AblProvider,
+    private readonly faysalBank: FaysalBankProvider,
   ) {}
 
   async onModuleInit() {
@@ -122,6 +126,8 @@ export class PayoutProviderFactory implements OnModuleInit {
       case 'standard_bank': return this.standardBank;
       case 'ucb': return this.ucb;
       case 'dhaka_bank': return this.dhakaBank;
+      case 'abl': return this.abl;
+      case 'faysal_bank': return this.faysalBank;
       default: return null;
     }
   }
