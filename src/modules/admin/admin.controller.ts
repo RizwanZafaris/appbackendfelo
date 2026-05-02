@@ -5,6 +5,7 @@ import { SupabaseJwtGuard } from '@/common/guards/supabase-jwt.guard';
 import { AdminAuthService } from './admin-auth.service';
 import { ConfigRegistryService } from './config-registry.service';
 import { VendorCredentialsService } from './vendor-credentials.service';
+import { ApiKeyService } from './api-key.service';
 
 import { AdminRegisterDto, AdminLoginDto, AdminRefreshDto, MFASetupDto, MFAVerifyDto, MFADisableDto } from './dto/admin.dto';
 
@@ -15,6 +16,7 @@ export class AdminController {
     private readonly adminAuth: AdminAuthService,
     private readonly configRegistry: ConfigRegistryService,
     private readonly vendorCredentials: VendorCredentialsService,
+    private readonly apiKeyService: ApiKeyService,
   ) {}
 
   // ─── Auth (JWT-based) ─────────────────────────────────
@@ -120,5 +122,33 @@ export class AdminController {
   @Post('v1/vendor-credentials/:vendorKey/test')
   testVendorConnection(@Param('vendorKey') vendorKey: string) {
     return this.vendorCredentials.testConnection(vendorKey);
+  }
+
+  // ─── API Keys ─────────────────────────────────────────
+  @Post('v1/api-keys')
+  async createApiKey(
+    @Body() body: { name: string; permissions?: string[]; expiresInDays?: number; rateLimitPerMinute?: number },
+  ) {
+    return this.apiKeyService.createKey(
+      body.name,
+      body.permissions,
+      body.expiresInDays,
+      body.rateLimitPerMinute,
+    );
+  }
+
+  @Get('v1/api-keys')
+  async listApiKeys() {
+    return this.apiKeyService.listKeys();
+  }
+
+  @Delete('v1/api-keys/:id')
+  async revokeApiKey(@Param('id') id: string) {
+    return { revoked: await this.apiKeyService.revokeKey(id) };
+  }
+
+  @Get('v1/api-keys/:id/usage')
+  async getApiKeyUsage(@Param('id') id: string) {
+    return this.apiKeyService.getKeyUsage(id);
   }
 }

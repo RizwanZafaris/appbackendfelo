@@ -6,6 +6,8 @@ import { DrizzleModule } from '@/common/db/db.module';
 import { CircuitBreakerModule } from '@/common/circuit-breaker/circuit-breaker.module';
 import { PrometheusModule } from '@/common/metrics/prometheus.module';
 import { ComplianceModule } from '@/common/compliance/compliance.module';
+import { HealthModule } from '@/common/health/health.module';
+import { AuditLogModule } from '@/common/audit/audit-log.module';
 import { AuthModule } from '@/modules/auth/auth.module';
 import { UsersModule } from '@/modules/users/users.module';
 import { KycModule } from '@/modules/kyc/kyc.module';
@@ -48,6 +50,8 @@ import config from '@/config/config';
     CircuitBreakerModule,
     PrometheusModule,
     ComplianceModule,
+    HealthModule,
+    AuditLogModule,
   ],
   providers: [
     {
