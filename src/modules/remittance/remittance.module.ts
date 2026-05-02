@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { RemittanceController } from './remittance.controller';
 import { RemittanceService } from './remittance.service';
 import { RemittanceAdminController } from './remittance.admin.controller';
+import { RemittanceReceiptService } from './remittance-receipt.service';
 import { PayoutProviderFactory } from './providers/provider-factory.service';
 import {
   PaymobProvider,
@@ -27,6 +28,7 @@ import {
   controllers: [RemittanceController, RemittanceAdminController],
   providers: [
     RemittanceService,
+    RemittanceReceiptService,
     PayoutProviderFactory,
     PaymobProvider,
     SamsaraProvider,
@@ -41,9 +43,11 @@ import {
     BracBankProvider,
     PrimeBankProvider,
     StandardBankProvider,
+    UcbProvider,
+    DhakaBankProvider,
     AblProvider,
     FaysalBankProvider,
   ],
-  exports: [RemittanceService, PayoutProviderFactory],
+  exports: [RemittanceService, PayoutProviderFactory, RemittanceReceiptService],
 })
 export class RemittanceModule {}

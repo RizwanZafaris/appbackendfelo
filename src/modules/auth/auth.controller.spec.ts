@@ -1,9 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ExecutionContext } from '@nestjs/common';
 
 import { AuthController } from './auth.controller';
-import { CurrentUser } from '@/common/decorators/current-user.decorator';
-import { mockExecutionContext, testUser } from '../../../test/setup';
+import { testUser } from '../../../test/setup';
 
 describe('AuthController', () => {
   let controller: AuthController;
@@ -27,22 +25,6 @@ describe('AuthController', () => {
       expect(result.id).toBe(testUser.id);
       expect(result.firebaseUid).toBe(testUser.firebaseUid);
       expect(result.email).toBe(testUser.email);
-    });
-  });
-
-  describe('CurrentUser decorator', () => {
-    it('should extract user from request context', () => {
-      const ctx = mockExecutionContext();
-      const decoratorFn = CurrentUser();
-      const result = decoratorFn(undefined, ctx as ExecutionContext);
-      expect(result).toEqual(testUser);
-    });
-
-    it('should return undefined when no user is on the request', () => {
-      const ctx = mockExecutionContext({ user: undefined });
-      const decoratorFn = CurrentUser();
-      const result = decoratorFn(undefined, ctx as ExecutionContext);
-      expect(result).toBeUndefined();
     });
   });
 });

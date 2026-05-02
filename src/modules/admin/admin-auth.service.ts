@@ -1,66 +1,110 @@
-import { Inject, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
-import { eq, desc } from 'drizzle-orm';
+import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
+import * as jwt from 'jsonwebtoken';
+import { authenticator } from 'otplib';
 
-import { Drizzle, DRIZZLE } from '@/common/db/db.module';
-import { adminUsers, adminSessions } from '@db/schema';
+export interface AdminTokenPayload {
+  sub: string;
+  email: string;
+  role: string;
+  permissions: string[];
+  iat: number;
+  exp: number;
+  type: 'access' | 'refresh';
+}
 
 @Injectable()
 export class AdminAuthService {
-  constructor(@Inject(DRIZZLE) private readonly db: Drizzle) {}
+  private readonly logger = new Logger(AdminAuthService.name);
+  private readonly jwtSecret: string;
+  private readonly refreshSecret: string;
+  private readonly accessTokenExpiry = '15m';
+  private readonly refreshTokenExpiry = '7d';
 
-  async register(email: string, displayName: string, credentialId: string) {
-    const [row] = await this.db
-      .insert(adminUsers)
-      .values({
-        email,
-        displayName,
-        webauthnCredentialId: credentialId,
-        role: 'super_admin' as never,
-        isActive: true,
-      } as never)
-      .returning();
-    return row;
+  constructor(private readonly configService: ConfigService) {
+    this.jwtSecret = this.configService.get<string>('ADMIN_JWT_SECRET') || this.generateSecret();
+    this.refreshSecret = this.configService.get<string>('ADMIN_REFRESH_SECRET') || this.generateSecret();
   }
 
-  async login(credentialId: string) {
-    const [user] = await this.db
-      .select()
-      .from(adminUsers)
-      .where(eq(adminUsers.webauthnCredentialId, credentialId))
-      .limit(1);
-    if (!user || !user.isActive) {
-      throw new UnauthorizedException('Invalid credential');
+  private generateSecret(): string {
+    return crypto.randomBytes(32).toString('hex');
+  }
+
+  generateTokens(admin: { id: string; email: string; role: string; permissions: string[] }): {
+    accessToken: string;
+    refreshToken: string;
+  } {
+    const accessToken = jwt.sign(
+      {
+        sub: admin.id,
+        email: admin.email,
+        role: admin.role,
+        permissions: admin.permissions,
+        type: 'access',
+      },
+      this.jwtSecret,
+      { expiresIn: this.accessTokenExpiry },
+    );
+
+    const refreshToken = jwt.sign(
+      {
+        sub: admin.id,
+        type: 'refresh',
+      },
+      this.refreshSecret,
+      { expiresIn: this.refreshTokenExpiry },
+    );
+
+    return { accessToken, refreshToken };
+  }
+
+  verifyAccessToken(token: string): AdminTokenPayload {
+    try {
+      return jwt.verify(token, this.jwtSecret) as AdminTokenPayload;
+    } catch (error) {
+      this.logger.warn('Invalid admin access token');
+      throw new UnauthorizedException('Invalid or expired token');
     }
-    const token = crypto.randomBytes(32).toString('hex');
-    const expiresAt = new Date(Date.now() + 8 * 60 * 60 * 1000);
-    await this.db.insert(adminSessions).values({
-      adminUserId: user.id,
-      token,
-      expiresAt,
-    });
-    return { token, expiresAt, user: { id: user.id, email: user.email, role: user.role } };
   }
 
-  async getMe(tokenHash: string) {
-    const [session] = await this.db
-      .select()
-      .from(adminSessions)
-      .where(eq(adminSessions.token, tokenHash))
-      .limit(1);
-    if (!session || session.expiresAt < new Date()) {
-      throw new UnauthorizedException('Session expired');
+  verifyRefreshToken(token: string): { sub: string } {
+    try {
+      return jwt.verify(token, this.refreshSecret) as { sub: string };
+    } catch (error) {
+      this.logger.warn('Invalid admin refresh token');
+      throw new UnauthorizedException('Invalid or expired refresh token');
     }
-    const [user] = await this.db
-      .select()
-      .from(adminUsers)
-      .where(eq(adminUsers.id, session.adminUserId))
-      .limit(1);
-    if (!user) throw new NotFoundException('Admin not found');
-    return { id: user.id, email: user.email, displayName: user.displayName, role: user.role };
   }
 
-  async listUsers() {
-    return this.db.select().from(adminUsers).orderBy(desc(adminUsers.createdAt));
+  // ─── MFA (TOTP) ─────────────────────────────────────────────────
+
+  generateMFASecret(): string {
+    return authenticator.generateSecret();
+  }
+
+  generateTOTPUri(secret: string, email: string): string {
+    return authenticator.keyuri(email, 'Felo Admin', secret);
+  }
+
+  verifyTOTP(token: string, secret: string): boolean {
+    return authenticator.verify({ token, secret });
+  }
+
+  generateBackupCodes(): string[] {
+    const codes: string[] = [];
+    for (let i = 0; i < 10; i++) {
+      codes.push(crypto.randomBytes(4).toString('hex').toUpperCase());
+    }
+    return codes;
+  }
+
+  hashBackupCode(code: string): string {
+    return crypto.createHash('sha256').update(code).digest('hex');
+  }
+
+  verifyBackupCode(code: string, hashedCodes: string[]): boolean {
+    const hash = this.hashBackupCode(code);
+    return hashedCodes.includes(hash);
   }
 }

@@ -162,8 +162,8 @@ export class RemittanceService {
         status: result.status,
         message: result.message,
       };
-    } catch (err) {
-      this.logger.error(`Payout failed for ${reference}: ${err.message}`);
+    } catch (err: any) {
+      this.logger.error(`Payout failed for ${reference}: ${err?.message}`);
       
       await this.db
         .update(remittanceTransactions)

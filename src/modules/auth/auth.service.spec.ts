@@ -15,6 +15,14 @@ describe('AuthService', () => {
   const email = 'test@felo.app';
   const phone = '+923001234567';
 
+  beforeAll(() => {
+    jest.useFakeTimers();
+  });
+
+  afterAll(() => {
+    jest.useRealTimers();
+  });
+
   beforeEach(async () => {
     mockDb = createMockDrizzle();
     mockCfg = mockConfigService({ 'JWT_SECRET': 'test-secret-key' });
@@ -88,6 +96,8 @@ describe('AuthService', () => {
       );
 
       const first = await service.loginWithOtp(userId, phone);
+      // Advance time so tokens have different timestamps
+      jest.advanceTimersByTime(2000);
       const rotated = await service.refreshToken(first.refreshToken);
 
       expect(rotated.accessToken).not.toBe(first.accessToken);

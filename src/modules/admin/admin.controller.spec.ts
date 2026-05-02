@@ -7,7 +7,7 @@ import { AdminAuthService } from './admin-auth.service';
 import { ConfigRegistryService } from './config-registry.service';
 import { VendorCredentialsService } from './vendor-credentials.service';
 import { DRIZZLE } from '@/common/db/db.module';
-import { createMockDrizzle, mockSelectChain, mockInsertChain, mockUpdateChain, createTestApp } from '../../../test/setup';
+import { createMockDrizzle, createTestApp } from '../../../test/setup';
 
 describe('AdminController', () => {
   let app: INestApplication;
@@ -17,7 +17,6 @@ describe('AdminController', () => {
   let mockVendorCredentials: jest.Mocked<VendorCredentialsService>;
 
   const adminToken = 'adm_tok_1234567890abcdef';
-  const tokenHash = '3c3e5b0c5e6b9e6f5d7c8b9a0e1f2d3c4e5b6a7f8d9e0b1c2d3e4f5a6b7c8d9e';
 
   beforeEach(async () => {
     mockDb = createMockDrizzle();
@@ -65,7 +64,7 @@ describe('AdminController', () => {
     it('POST /admin/auth/register should create an admin user', async () => {
       const body = { email: 'admin@felo.app', displayName: 'Admin', credentialId: 'cred_001' };
       const created = { id: 'adm_001', ...body };
-      mockAdminAuth.register.mockResolvedValue(created);
+      mockAdminAuth.register.mockResolvedValue(created as any);
 
       const res = await request(app.getHttpServer())
         .post('/admin/auth/register')
@@ -83,7 +82,7 @@ describe('AdminController', () => {
         expiresAt: new Date(Date.now() + 8 * 60 * 60 * 1000),
         user: { id: 'adm_001', email: 'admin@felo.app', role: 'super_admin' },
       };
-      mockAdminAuth.login.mockResolvedValue(loginResult);
+      mockAdminAuth.login.mockResolvedValue(loginResult as any);
 
       const res = await request(app.getHttpServer())
         .post('/admin/auth/login')
@@ -96,7 +95,7 @@ describe('AdminController', () => {
 
     it('GET /admin/auth/me should return current admin profile', async () => {
       const profile = { id: 'adm_001', email: 'admin@felo.app', displayName: 'Admin', role: 'super_admin' };
-      mockAdminAuth.getMe.mockResolvedValue(profile);
+      mockAdminAuth.getMe.mockResolvedValue(profile as any);
 
       const res = await request(app.getHttpServer())
         .get('/admin/auth/me')
@@ -112,7 +111,7 @@ describe('AdminController', () => {
         { id: 'adm_001', email: 'a@felo.app', role: 'super_admin' },
         { id: 'adm_002', email: 'b@felo.app', role: 'analyst' },
       ];
-      mockAdminAuth.listUsers.mockResolvedValue(users);
+      mockAdminAuth.listUsers.mockResolvedValue(users as any);
 
       const res = await request(app.getHttpServer())
         .get('/admin/users')
@@ -127,7 +126,7 @@ describe('AdminController', () => {
   describe('Config Registry (P1)', () => {
     it('GET /admin/v1/config should list config entries with pagination', async () => {
       const configs = [{ key: 'max_txn', value: 1000 }];
-      mockConfigRegistry.list.mockResolvedValue(configs);
+      mockConfigRegistry.list.mockResolvedValue(configs as any);
 
       const res = await request(app.getHttpServer())
         .get('/admin/v1/config?search=max&limit=10')
@@ -139,7 +138,7 @@ describe('AdminController', () => {
 
     it('GET /admin/v1/config/:key should return a single config', async () => {
       const config = { key: 'fee_bps', value: 50 };
-      mockConfigRegistry.get.mockResolvedValue(config);
+      mockConfigRegistry.get.mockResolvedValue(config as any);
 
       const res = await request(app.getHttpServer())
         .get('/admin/v1/config/fee_bps')
@@ -152,7 +151,7 @@ describe('AdminController', () => {
     it('POST /admin/v1/config should create a new config', async () => {
       const body = { key: 'new_key', value: 'new_value', description: 'desc', audience: { all: true } };
       const created = { id: 'cfg_001', ...body };
-      mockConfigRegistry.create.mockResolvedValue(created);
+      mockConfigRegistry.create.mockResolvedValue(created as any);
 
       const res = await request(app.getHttpServer())
         .post('/admin/v1/config')
@@ -173,7 +172,7 @@ describe('AdminController', () => {
     it('PATCH /admin/v1/config/:key should update an existing config', async () => {
       const body = { value: 'updated_value' };
       const updated = { key: 'fee_bps', value: 'updated_value', version: 2 };
-      mockConfigRegistry.update.mockResolvedValue(updated);
+      mockConfigRegistry.update.mockResolvedValue(updated as any);
 
       const res = await request(app.getHttpServer())
         .patch('/admin/v1/config/fee_bps')
@@ -186,7 +185,7 @@ describe('AdminController', () => {
     });
 
     it('DELETE /admin/v1/config/:key should delete a config', async () => {
-      mockConfigRegistry.remove.mockResolvedValue({ deleted: true });
+      mockConfigRegistry.remove.mockResolvedValue({ deleted: true } as any);
 
       const res = await request(app.getHttpServer())
         .delete('/admin/v1/config/fee_bps')
@@ -200,7 +199,7 @@ describe('AdminController', () => {
   describe('Vendor Credentials (P6)', () => {
     it('GET /admin/v1/vendor-credentials should list credentials with filters', async () => {
       const creds = [{ id: 'vc_001', vendorKey: 'stripe', env: 'prod' }];
-      mockVendorCredentials.list.mockResolvedValue(creds);
+      mockVendorCredentials.list.mockResolvedValue(creds as any);
 
       const res = await request(app.getHttpServer())
         .get('/admin/v1/vendor-credentials?vendorKey=stripe&env=prod&limit=5')
@@ -213,7 +212,7 @@ describe('AdminController', () => {
     it('POST /admin/v1/vendor-credentials should upsert credentials', async () => {
       const body = { vendorKey: 'stripe', env: 'prod', encryptedValue: 'enc_val' };
       const upserted = { id: 'vc_001', vendorKey: 'stripe', env: 'prod' };
-      mockVendorCredentials.upsert.mockResolvedValue(upserted);
+      mockVendorCredentials.upsert.mockResolvedValue(upserted as any);
 
       const res = await request(app.getHttpServer())
         .post('/admin/v1/vendor-credentials')

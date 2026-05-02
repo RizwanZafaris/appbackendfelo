@@ -3,6 +3,9 @@ import { Inject } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 
 import { Drizzle, DRIZZLE } from '@/common/db/db.module';
+import { CircuitBreakerRegistry } from '@/common/circuit-breaker/circuit-breaker';
+import { withRetry } from '@/common/retry/retry';
+import { PrometheusService } from '@/common/metrics/prometheus.service';
 import { remittanceProviders, remittanceRoutes } from '@/common/db/schema/remittance.schema';
 import {
   PayoutProvider,
@@ -51,6 +54,8 @@ export class PayoutProviderFactory implements OnModuleInit {
 
   constructor(
     @Inject(DRIZZLE) private readonly db: Drizzle,
+    private readonly circuitBreakerRegistry: CircuitBreakerRegistry,
+    private readonly prometheusService: PrometheusService,
     private readonly paymob: PaymobProvider,
     private readonly samsara: SamsaraProvider,
     private readonly khalti: KhaltiProvider,
@@ -168,5 +173,51 @@ export class PayoutProviderFactory implements OnModuleInit {
         estimatedMinutes: r.estimatedMinutes,
         enabled: r.enabled,
       }));
+  }
+
+  async executeWithResilience<T>(
+    providerId: string,
+    operation: string,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    const breaker = this.circuitBreakerRegistry.getOrCreate(providerId, {
+      failureThreshold: 5,
+      resetTimeoutMs: 30000,
+      halfOpenMaxCalls: 3,
+    });
+
+    const startTime = Date.now();
+    const labels = { provider: providerId, operation };
+
+    try {
+      const result = await breaker.execute(() =>
+        withRetry(fn, {
+          maxAttempts: 3,
+          baseDelayMs: 1000,
+          maxDelayMs: 30000,
+          retryableStatuses: [408, 429, 500, 502, 503, 504],
+          onRetry: (attempt, error, delayMs) => {
+            this.logger.warn(
+              `Retry ${attempt} for ${providerId}/${operation} after ${delayMs}ms: ${error.message}`,
+            );
+            this.prometheusService.counter('remittance_retry_total', 1, labels);
+          },
+        }),
+      );
+
+      const duration = (Date.now() - startTime) / 1000;
+      this.prometheusService.histogram('remittance_duration_seconds', duration, labels);
+      this.prometheusService.counter('remittance_success_total', 1, labels);
+
+      return result;
+    } catch (error) {
+      const duration = (Date.now() - startTime) / 1000;
+      this.prometheusService.histogram('remittance_duration_seconds', duration, labels);
+      this.prometheusService.counter('remittance_failures_total', 1, {
+        ...labels,
+        error: (error as Error).name || 'Unknown',
+      });
+      throw error;
+    }
   }
 }

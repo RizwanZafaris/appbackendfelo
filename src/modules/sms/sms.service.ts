@@ -90,8 +90,8 @@ export class SmsService {
           return result;
         }
         this.logger.warn(`SMS route ${route.name} failed, trying next...`);
-      } catch (err) {
-        this.logger.error(`SMS route ${route.name} error: ${err.message}`);
+      } catch (err: any) {
+        this.logger.error(`SMS route ${route.name} error: ${err?.message}`);
       }
     }
 
@@ -233,8 +233,8 @@ export class SmsService {
             type: 'otp',
           });
           return { name: route.name, status: 'up' };
-        } catch (err) {
-          return { name: route.name, status: 'down', error: err.message };
+        } catch (err: any) {
+          return { name: route.name, status: 'down', error: err?.message };
         }
       }),
     );
