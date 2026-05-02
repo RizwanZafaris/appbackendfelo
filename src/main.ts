@@ -94,7 +94,21 @@ async function bootstrap() {
   }
 
   const port = Number(config.get<string>('PORT', '3000'));
-  await app.listen(port);
+  const server = await app.listen(port);
+
+  // Graceful shutdown
+  const gracefulShutdown = (signal: string) => {
+    console.log(`Received ${signal}. Starting graceful shutdown...`);
+    server.close(async () => {
+      console.log('HTTP server closed.');
+      await app.close();
+      console.log('NestJS app closed.');
+      process.exit(0);
+    });
+  };
+
+  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
   // eslint-disable-next-line no-console
   console.log(`Felo API listening on :${port}/${apiPrefix}${isProd ? '' : ' — docs at /docs'}`);

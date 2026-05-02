@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { DrizzleModule } from '@/common/db/db.module';
 import { AuthModule } from '@/modules/auth/auth.module';
 import { UsersModule } from '@/modules/users/users.module';
@@ -10,11 +12,26 @@ import { LedgerModule } from '@/modules/ledger/ledger.module';
 import { DisbursementModule } from '@/modules/disbursement/disbursement.module';
 import { RemittanceModule } from '@/modules/remittance/remittance.module';
 import { SmsModule } from '@/modules/sms/sms.module';
+import { RequestIdInterceptor } from '@/common/interceptors/request-id.interceptor';
+import { LoggingInterceptor } from '@/common/interceptors/logging.interceptor';
 import config from '@/config/config';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ load: [config], isGlobal: true }),
+    ThrottlerModule.forRoot([{
+      name: 'default',
+      ttl: 60000,
+      limit: 100,
+    }, {
+      name: 'auth',
+      ttl: 60000,
+      limit: 10,
+    }, {
+      name: 'otp',
+      ttl: 300000,
+      limit: 5,
+    }]),
     DrizzleModule,
     AuthModule,
     UsersModule,
@@ -25,6 +42,20 @@ import config from '@/config/config';
     DisbursementModule,
     RemittanceModule,
     SmsModule,
+  ],
+  providers: [
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: RequestIdInterceptor,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: LoggingInterceptor,
+    },
   ],
 })
 export class AppModule {}
