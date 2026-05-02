@@ -60,10 +60,13 @@ export class TreasuryService {
     const dealId = result[0].id;
     const txnId = `DEAL-${dealId}`;
 
-    await this.ledgerService.postEntry(
-      operatorId,
-      txnId,
-      [
+    // Stable idempotency key — postEntry called twice for the same deal
+    // (e.g. via retry) returns the cached entry instead of double-posting.
+    await this.ledgerService.postEntry({
+      userId: operatorId,
+      transactionId: txnId,
+      idempotencyKey: `deal-book-${dealId}`,
+      lines: [
         {
           ledgerAccountId: sourceTreasury[0].id,
           debitMinor: payload.sourceAmountMinor,
@@ -79,7 +82,7 @@ export class TreasuryService {
       ],
       ipAddress,
       userAgent,
-    );
+    });
 
     await this.auditService.record({
       actorId: operatorId,

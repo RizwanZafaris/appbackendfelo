@@ -1,20 +1,25 @@
 import {
+  Body,
   Controller,
   Get,
-  Post,
-  Body,
   Param,
-  Query,
-  UseGuards,
-  Req,
   Patch,
+  Post,
+  Query,
+  Req,
+  UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation } from '@nestjs/swagger';
-import { SupabaseJwtGuard } from '@/common/guards/supabase-jwt.guard';
+import { Throttle } from '@nestjs/throttler';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
+
 import { CurrentUser } from '@/common/decorators/current-user.decorator';
+import { Public } from '@/common/decorators/public.decorator';
+import { SupabaseJwtGuard } from '@/common/guards/supabase-jwt.guard';
 import { RequestUser } from '@/common/types/request-user';
+
 import { PayoutProviderFactory } from './providers/provider-factory.service';
 import { RemittanceService } from './remittance.service';
+import { RemittanceWebhookGuard } from './remittance-webhook.guard';
 
 @ApiTags('remittance')
 @Controller('remittance')
@@ -52,6 +57,7 @@ export class RemittanceController {
     return this.service.getQuote(body);
   }
 
+  @Throttle({ remittance: { limit: 5, ttl: 60_000 } })
   @Post('send')
   @ApiOperation({ summary: 'Initiate a remittance payout' })
   async sendRemittance(
@@ -66,6 +72,7 @@ export class RemittanceController {
       recipientBankName?: string;
       purpose?: string;
       reference?: string;
+      idempotencyKey?: string;
       metadata?: Record<string, unknown>;
     },
   ) {
@@ -103,8 +110,17 @@ export class RemittanceController {
     return this.service.checkProviderStatus(id);
   }
 
+  /**
+   * Provider webhook receiver. Authenticated by RemittanceWebhookGuard
+   * (HMAC + replay protection on UNIQUE(provider, event_id)) — not by the
+   * Supabase JWT guard, since provider servers don't carry a user JWT.
+   * The raw body is mounted by main.ts on /v1/remittance/webhook/* before
+   * bodyParser.json so HMAC verification gets the unparsed bytes.
+   */
+  @Public()
+  @UseGuards(RemittanceWebhookGuard)
   @Post('webhook/:providerCode')
-  @ApiOperation({ summary: 'Receive webhooks from payout providers' })
+  @ApiOperation({ summary: 'Receive webhooks from payout providers (signed)' })
   async handleWebhook(
     @Param('providerCode') providerCode: string,
     @Req() req: Request,

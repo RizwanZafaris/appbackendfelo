@@ -2,11 +2,25 @@ import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { and, desc, eq, sql } from 'drizzle-orm';
 
 import { Drizzle, DRIZZLE } from '@/common/db/db.module';
+import { safeFetch } from '@/common/net/safe-fetch';
 import { profiles, statementImports, transactions } from '@db/schema';
 
 import { CsvStatementParser } from './parsers/csv.parser';
 import { OfxStatementParser } from './parsers/ofx.parser';
 import { ParseOutcome, ParsedRow, StatementParser } from './parsers/statement-parser';
+
+/**
+ * Allowlist for statement-import URL fetches. Only Supabase Storage signed
+ * URLs are accepted — no arbitrary user-supplied URLs (which would allow
+ * SSRF against AWS metadata, internal services, etc.).
+ */
+const STATEMENT_IMPORT_HOST_ALLOWLIST = (
+  process.env.STATEMENT_IMPORT_HOSTS ?? 'supabase.co,supabase.in'
+)
+  .split(',')
+  .map((h) => h.trim())
+  .filter(Boolean);
+const STATEMENT_IMPORT_MAX_BYTES = 25 * 1024 * 1024;
 
 @Injectable()
 export class StatementImportService {
@@ -56,9 +70,14 @@ export class StatementImportService {
       .where(eq(statementImports.id, importId));
 
     try {
-      const fileRes = await fetch(row.fileUrl);
-      if (!fileRes.ok) throw new Error(`File fetch ${fileRes.status}`);
-      const buf = Buffer.from(await fileRes.arrayBuffer());
+      const fileRes = await safeFetch(row.fileUrl, {
+        hostAllowlist: STATEMENT_IMPORT_HOST_ALLOWLIST,
+        maxBytes: STATEMENT_IMPORT_MAX_BYTES,
+      });
+      if (fileRes.status < 200 || fileRes.status >= 300) {
+        throw new Error(`File fetch ${fileRes.status}`);
+      }
+      const buf = fileRes.body;
 
       const parser = this.parserFor(row.format);
       const currency = await this.userCurrency(userId);
@@ -104,9 +123,14 @@ export class StatementImportService {
     }
 
     // Re-parse the file to get the full row set (preview is capped at 100).
-    const fileRes = await fetch(row.fileUrl);
-    if (!fileRes.ok) throw new Error(`File fetch ${fileRes.status}`);
-    const buf = Buffer.from(await fileRes.arrayBuffer());
+    const fileRes = await safeFetch(row.fileUrl, {
+      hostAllowlist: STATEMENT_IMPORT_HOST_ALLOWLIST,
+      maxBytes: STATEMENT_IMPORT_MAX_BYTES,
+    });
+    if (fileRes.status < 200 || fileRes.status >= 300) {
+      throw new Error(`File fetch ${fileRes.status}`);
+    }
+    const buf = fileRes.body;
     const parser = this.parserFor(row.format);
     const currency = await this.userCurrency(userId);
     const outcome = await parser.parse(buf, currency);

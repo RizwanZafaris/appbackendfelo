@@ -1,11 +1,13 @@
-import { Controller, Get, Post, Param, Query, UseGuards, Req, Body } from '@nestjs/common';
-import { LedgerService, LedgerLine } from './ledger.service';
-import { SupabaseJwtGuard } from '@/common/guards/supabase-jwt.guard';
-import { CurrentUser } from '@/common/decorators/current-user.decorator';
-import { RequestUser } from '@/common/types/request-user';
-import { CursorPaginationParams } from '@/common/pagination';
-import { IsString, IsInt, IsOptional, IsArray, ValidateNested, Length } from 'class-validator';
+import { BadRequestException, Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { Type } from 'class-transformer';
+import { IsArray, IsInt, IsString, Length, MaxLength, MinLength, ValidateNested } from 'class-validator';
+
+import { CurrentUser } from '@/common/decorators/current-user.decorator';
+import { SupabaseJwtGuard } from '@/common/guards/supabase-jwt.guard';
+import { CursorPaginationParams } from '@/common/pagination';
+import { RequestUser } from '@/common/types/request-user';
+
+import { LedgerLine, LedgerService } from './ledger.service';
 
 class PostLineDto {
   @IsInt()
@@ -29,6 +31,19 @@ class PostEntryDto {
   @ValidateNested({ each: true })
   @Type(() => PostLineDto)
   lines!: PostLineDto[];
+
+  /** Caller-supplied idempotency key. Falls back to Idempotency-Key header. */
+  @IsString()
+  @MinLength(8)
+  @MaxLength(128)
+  idempotencyKey!: string;
+}
+
+class ReverseEntryDto {
+  @IsString()
+  @MinLength(8)
+  @MaxLength(128)
+  idempotencyKey!: string;
 }
 
 @Controller('ledger')
@@ -69,30 +84,38 @@ export class LedgerController {
       currency: line.currency,
     }));
 
-    await this.ledgerService.postEntry(
-      Number(user.id),
-      body.transactionId,
-      lines,
-      (req as any).ip,
-      (req as any).headers['user-agent'],
-    );
+    const headers = (req as unknown as { headers?: Record<string, string> }).headers ?? {};
+    const idempotencyKey = body.idempotencyKey || headers['idempotency-key'] || '';
+    if (!idempotencyKey) {
+      throw new BadRequestException('idempotencyKey or Idempotency-Key header required');
+    }
 
-    return { success: true };
+    const result = await this.ledgerService.postEntry({
+      userId: Number(user.id),
+      transactionId: body.transactionId,
+      idempotencyKey,
+      lines,
+      ipAddress: (req as unknown as { ip?: string }).ip,
+      userAgent: headers['user-agent'],
+    });
+    return { success: true, ...result };
   }
 
   @Post('reverse/:txnId')
   async reverse(
     @CurrentUser() user: RequestUser,
     @Param('txnId') txnId: string,
+    @Body() body: ReverseEntryDto,
     @Req() req: Request,
   ) {
-    // Ownership check: verify all original entries belong to requesting user's accounts
     await this.ledgerService.verifyTransactionOwnership(txnId, Number(user.id));
+    const headers = (req as unknown as { headers?: Record<string, string> }).headers ?? {};
     await this.ledgerService.reverseEntry(
       Number(user.id),
       txnId,
-      (req as any).ip,
-      (req as any).headers['user-agent'],
+      body.idempotencyKey,
+      (req as unknown as { ip?: string }).ip,
+      headers['user-agent'],
     );
     return { success: true };
   }
