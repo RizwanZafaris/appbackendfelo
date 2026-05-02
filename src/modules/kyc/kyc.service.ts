@@ -12,7 +12,7 @@ import { eq } from 'drizzle-orm';
 import { createHmac } from 'crypto';
 
 import { Drizzle, DRIZZLE } from '@/common/db/db.module';
-import { profiles, kycDocuments } from '@db/schema';
+import { profiles, kycDocuments } from '@/common/db/schema';
 
 import { KycWebhookDto } from './dto/kyc.dto';
 
