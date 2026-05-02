@@ -28,9 +28,15 @@ const drizzleProvider: Provider = {
   },
 };
 
+const dbStringProvider: Provider = {
+  provide: 'DB',
+  inject: [DRIZZLE],
+  useFactory: (db: Drizzle) => db,
+};
+
 @Global()
 @Module({
-  providers: [drizzleProvider],
-  exports: [DRIZZLE],
+  providers: [drizzleProvider, dbStringProvider],
+  exports: [DRIZZLE, 'DB'],
 })
 export class DbModule {}
