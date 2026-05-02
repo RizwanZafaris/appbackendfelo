@@ -11,6 +11,14 @@ import {
   EightBProvider,
   HrcUblProvider,
   HabibMetroProvider,
+  Digit9Provider,
+  MtbProvider,
+  AgraniBankProvider,
+  BracBankProvider,
+  PrimeBankProvider,
+  StandardBankProvider,
+  UcbProvider,
+  DhakaBankProvider,
 } from './providers/payout.providers';
 
 @Module({
@@ -25,6 +33,14 @@ import {
     EightBProvider,
     HrcUblProvider,
     HabibMetroProvider,
+    Digit9Provider,
+    MtbProvider,
+    AgraniBankProvider,
+    BracBankProvider,
+    PrimeBankProvider,
+    StandardBankProvider,
+    UcbProvider,
+    DhakaBankProvider,
   ],
   exports: [RemittanceService, PayoutProviderFactory],
 })

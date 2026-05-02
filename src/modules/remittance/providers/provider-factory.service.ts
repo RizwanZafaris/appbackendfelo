@@ -13,6 +13,14 @@ import {
   EightBProvider,
   HrcUblProvider,
   HabibMetroProvider,
+  Digit9Provider,
+  MtbProvider,
+  AgraniBankProvider,
+  BracBankProvider,
+  PrimeBankProvider,
+  StandardBankProvider,
+  UcbProvider,
+  DhakaBankProvider,
   ProviderConfig,
 } from './payout.providers';
 
@@ -48,6 +56,14 @@ export class PayoutProviderFactory implements OnModuleInit {
     private readonly eightB: EightBProvider,
     private readonly hrcUbl: HrcUblProvider,
     private readonly habibMetro: HabibMetroProvider,
+    private readonly digit9: Digit9Provider,
+    private readonly mtb: MtbProvider,
+    private readonly agraniBank: AgraniBankProvider,
+    private readonly bracBank: BracBankProvider,
+    private readonly primeBank: PrimeBankProvider,
+    private readonly standardBank: StandardBankProvider,
+    private readonly ucb: UcbProvider,
+    private readonly dhakaBank: DhakaBankProvider,
   ) {}
 
   async onModuleInit() {
@@ -98,6 +114,14 @@ export class PayoutProviderFactory implements OnModuleInit {
       case '8b': return this.eightB;
       case 'hrc_ubl': return this.hrcUbl;
       case 'habib_metro': return this.habibMetro;
+      case 'digit9': return this.digit9;
+      case 'mtb': return this.mtb;
+      case 'agrani_bank': return this.agraniBank;
+      case 'brac_bank': return this.bracBank;
+      case 'prime_bank': return this.primeBank;
+      case 'standard_bank': return this.standardBank;
+      case 'ucb': return this.ucb;
+      case 'dhaka_bank': return this.dhakaBank;
       default: return null;
     }
   }

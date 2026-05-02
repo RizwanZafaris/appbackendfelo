@@ -31,7 +31,7 @@ export interface ProviderConfig {
   name: string;
   enabled: boolean;
   baseUrl: string;
-  authType: 'oauth2' | 'apikey' | 'hmac' | 'basic' | 'otp_token';
+  authType: 'oauth2' | 'apikey' | 'hmac' | 'basic' | 'otp_token' | 'jwt_basic' | 'pkcs7_xml' | 'jwe_oauth2' | 'aes_token' | 'soap_salted' | 'dll_session';
   credentials: Record<string, string>;
   supportedCorridors: string[];
   supportedCurrencies: string[];
@@ -718,6 +718,1025 @@ export class HabibMetroProvider extends PayoutProvider {
   async validateCredentials(): Promise<boolean> {
     try {
       await this.getAuthToken();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
+
+// ============================================
+// DIGIT9 PROVIDER (Pakistan - OAuth2 Password Grant)
+// ============================================
+@Injectable()
+export class Digit9Provider extends PayoutProvider {
+  protected readonly providerCode = 'digit9';
+  private api: AxiosInstance;
+  private config: ProviderConfig;
+  private accessToken: string;
+  private tokenExpiry: Date;
+
+  async initialize(config: ProviderConfig): Promise<void> {
+    this.config = config;
+    this.api = axios.create({
+      baseURL: config.baseUrl,
+      timeout: 30000,
+      headers: {
+        'Content-Type': 'application/json',
+        'sender': config.credentials.sender || 'commerceplexltd',
+        'channel': config.credentials.channel || 'Direct',
+        'company': config.credentials.company || '',
+        'branch': config.credentials.branch || '',
+      },
+    });
+
+    this.api.interceptors.request.use(async (cfg) => {
+      if (!this.accessToken || new Date() > this.tokenExpiry) {
+        await this.refreshToken();
+      }
+      cfg.headers['Authorization'] = `Bearer ${this.accessToken}`;
+      return cfg;
+    });
+  }
+
+  private async refreshToken(): Promise<void> {
+    const { username, password, clientId, clientSecret } = this.config.credentials;
+    const params = new URLSearchParams();
+    params.append('username', username);
+    params.append('password', password);
+    params.append('grant_type', 'password');
+    params.append('client_id', clientId);
+    params.append('client_secret', clientSecret);
+
+    const res = await axios.post(
+      `${this.config.baseUrl}/auth/realms/cdp/protocol/openid-connect/token`,
+      params.toString(),
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+    );
+    this.accessToken = res.data.access_token;
+    this.tokenExpiry = new Date(Date.now() + res.data.expires_in * 1000);
+  }
+
+  async sendPayout(request: PayoutRequest): Promise<PayoutResponse> {
+    try {
+      const quoteRes = await this.api.post('/amr/paas/api/v1_0/paas/quote', {
+        sending_country_code: request.metadata?.sendingCountryCode || 'AE',
+        sending_currency_code: request.metadata?.sendingCurrencyCode || 'USD',
+        service_type: 'C2C',
+        receiving_country_code: request.metadata?.receivingCountryCode || 'PK',
+        receiving_currency_code: request.currency,
+        sending_amount: request.amount,
+        receiving_mode: request.metadata?.receivingMode || 'BANK',
+        type: 'SEND',
+        instrument: 'REMITTANCE',
+      });
+
+      const quoteId = quoteRes.data.data?.quote_id;
+
+      const txRes = await this.api.post('/amr/paas/api/v1_0/paas/createtransaction', {
+        type: 'SEND',
+        source_of_income: request.metadata?.sourceOfIncome || 'SLRY',
+        purpose_of_txn: request.metadata?.purposeOfTxn || 'SAVG',
+        instrument: 'REMITTANCE',
+        quote_id: quoteId,
+        sender: {
+          agent_customer_number: request.metadata?.customerNumber || request.reference,
+          mobile_number: request.metadata?.senderPhone || '+971500000000',
+          first_name: request.metadata?.senderFirstName || 'Sender',
+          last_name: request.metadata?.senderLastName || 'Name',
+          date_of_birth: request.metadata?.senderDob || '1990-01-01',
+          country_of_birth: request.metadata?.senderCountryOfBirth || 'IN',
+          nationality: request.metadata?.senderNationality || 'IN',
+        },
+        receiver: {
+          first_name: request.recipientName.split(' ')[0],
+          last_name: request.recipientName.split(' ').slice(1).join(' ') || '',
+          mobile_number: request.recipientPhone || '',
+          account_number: request.recipientAccount,
+        },
+        message: request.purpose || 'Agency transaction',
+      });
+
+      return {
+        success: txRes.data.status === 'success',
+        providerTransactionId: txRes.data.data?.transaction_id || quoteId,
+        status: txRes.data.status === 'success' ? 'initiated' : 'failed',
+        message: txRes.data.status === 'success' ? 'Transaction created' : txRes.data.message,
+        rawResponse: txRes.data,
+      };
+    } catch (err) {
+      this.logger.error(`Digit9 payout failed: ${err.message}`);
+      return { success: false, status: 'failed', message: err.message };
+    }
+  }
+
+  async checkStatus(providerTransactionId: string): Promise<PayoutResponse> {
+    try {
+      return {
+        success: true,
+        providerTransactionId,
+        status: 'pending',
+        message: 'Status check not available via API',
+      };
+    } catch (err) {
+      return { success: false, status: 'failed', message: err.message };
+    }
+  }
+
+  async validateCredentials(): Promise<boolean> {
+    try {
+      await this.refreshToken();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
+
+// ============================================
+// MTB PROVIDER (Bangladesh - JWT + AES Encryption)
+// ============================================
+@Injectable()
+export class MtbProvider extends PayoutProvider {
+  protected readonly providerCode = 'mtb';
+  private api: AxiosInstance;
+  private config: ProviderConfig;
+  private jwtToken: string;
+
+  async initialize(config: ProviderConfig): Promise<void> {
+    this.config = config;
+    this.api = axios.create({
+      baseURL: config.baseUrl,
+      timeout: 30000,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  private async getJwtToken(): Promise<string> {
+    if (this.jwtToken) return this.jwtToken;
+
+    const { basicAuthUsername, basicAuthPassword, remitChannelId } = this.config.credentials;
+    const res = await axios.post(
+      `${this.config.baseUrl}/token/accessToken`,
+      { remitChannelId },
+      {
+        auth: {
+          username: basicAuthUsername,
+          password: basicAuthPassword,
+        },
+      }
+    );
+    this.jwtToken = res.data.responseDetails?.accessToken;
+    return this.jwtToken;
+  }
+
+  async sendPayout(request: PayoutRequest): Promise<PayoutResponse> {
+    try {
+      const token = await this.getJwtToken();
+      const reqId = request.reference;
+
+      const payload = {
+        reqId,
+        referenceNumber: request.reference,
+        tranMode: request.metadata?.tranMode || 'OTHERBANK',
+        paymentInfo: {
+          remitType: request.metadata?.remitType || 'WE01',
+          tranAmount: request.amount.toFixed(2),
+          originatingCurrency: request.metadata?.originatingCurrency || 'USD',
+          forexRate: request.metadata?.forexRate || '1.0',
+          originatingAmount: request.metadata?.originatingAmount || request.amount.toString(),
+          sourceOfFund: request.metadata?.sourceOfFund || 'Salary',
+          purposeOfFund: request.metadata?.purposeOfFund || 'Education',
+        },
+        senderInfo: {
+          senderName: request.metadata?.senderName || 'Sender',
+          senderPhone: request.metadata?.senderPhone || '+0000000000',
+          senderGender: request.metadata?.senderGender || 'M',
+          senderOccupation: request.metadata?.senderOccupation || 'Service',
+          senderNationality: request.metadata?.senderNationality || 'BD',
+          senderAddressDtls: {
+            sendingCountry: request.metadata?.senderCountry || 'AE',
+            senderAddress: request.metadata?.senderAddress || '',
+          },
+        },
+        beneficiaryInfo: {
+          beneficiaryName: request.recipientName,
+          beneficiaryPhone: request.recipientPhone || '+8800000000000',
+          beneficiaryGender: 'M',
+          beneficiaryOccupation: 'Service',
+          beneficiaryAddress: request.metadata?.beneficiaryAddress || 'Bangladesh',
+          beneRelationship: request.metadata?.relationship || 'Others',
+        },
+        otherBank: request.metadata?.tranMode === 'OTHERBANK' ? {
+          tranChannel: request.metadata?.tranChannel || 'BEFTN',
+          beneficiaryAccount: request.recipientAccount,
+          bankName: request.recipientBankName || '',
+          branchName: request.metadata?.branchName || '',
+        } : undefined,
+        mtbAccount: request.metadata?.tranMode === 'MTB' ? {
+          beneficiaryAccount: request.recipientAccount,
+        } : undefined,
+        walletAccount: request.metadata?.tranMode === 'WALLET' ? {
+          walletNo: request.recipientAccount,
+          walletName: request.metadata?.walletName || '',
+        } : undefined,
+      };
+
+      const res = await this.api.post('/Payment/PaymentRequest', payload, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      return {
+        success: res.data.respCode === 'RS0000',
+        providerTransactionId: res.data.transactionId || reqId,
+        status: res.data.respCode === 'RS0000' ? 'initiated' : 'failed',
+        message: res.data.respDesc,
+        rawResponse: res.data,
+      };
+    } catch (err) {
+      this.logger.error(`MTB payout failed: ${err.message}`);
+      return { success: false, status: 'failed', message: err.message };
+    }
+  }
+
+  async checkStatus(providerTransactionId: string): Promise<PayoutResponse> {
+    try {
+      const token = await this.getJwtToken();
+      const res = await this.api.post('/Payment/PaymentInquiry', {
+        reqId: providerTransactionId,
+        referenceNumber: providerTransactionId,
+      }, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      return {
+        success: res.data.respCode === 'RS0000',
+        providerTransactionId,
+        status: res.data.transactionStatus === 'COMPLETED' ? 'completed' : 'pending',
+        message: res.data.respDesc,
+        rawResponse: res.data,
+      };
+    } catch (err) {
+      return { success: false, status: 'failed', message: err.message };
+    }
+  }
+
+  async validateCredentials(): Promise<boolean> {
+    try {
+      await this.getJwtToken();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
+
+// ============================================
+// AGRANI BANK PROVIDER (Bangladesh - XML + Header Auth)
+// ============================================
+@Injectable()
+export class AgraniBankProvider extends PayoutProvider {
+  protected readonly providerCode = 'agrani_bank';
+  private api: AxiosInstance;
+  private config: ProviderConfig;
+
+  async initialize(config: ProviderConfig): Promise<void> {
+    this.config = config;
+    this.api = axios.create({
+      baseURL: config.baseUrl,
+      timeout: 30000,
+      headers: {
+        'Content-Type': 'application/xml',
+        'Username': config.credentials.username,
+        'Expassword': config.credentials.expassword,
+      },
+    });
+  }
+
+  async sendPayout(request: PayoutRequest): Promise<PayoutResponse> {
+    try {
+      const { excode } = this.config.credentials;
+      const trmode = request.metadata?.trmode || '15';
+
+      const xmlPayload = `
+<Transaction>
+  <Header>
+    <excode>${excode}</excode>
+    <entereddatetime>${new Date().toISOString()}</entereddatetime>
+  </Header>
+  <tranno>${request.reference}</tranno>
+  <traninfosl>${request.metadata?.traninfosl || '0'}</traninfosl>
+  <trmode>${trmode}</trmode>
+  <purpose>${request.metadata?.purpose || '2'}</purpose>
+  <remamountsource>${request.metadata?.remamountsource || '0.0'}</remamountsource>
+  <remamountdest>${request.amount}</remamountdest>
+  <incentiveamount>0.0</incentiveamount>
+  <incentiveamountagr>0.0</incentiveamountagr>
+  <ratevalue>${request.metadata?.ratevalue || '1.00'}</ratevalue>
+  <remid>0</remid>
+  <scurr>${request.metadata?.scurr || 'USD'}</scurr>
+  <remfname>${request.metadata?.remfname || 'Sender'}</remfname>
+  <remlname>${request.metadata?.remlname || ''}</remlname>
+  <remaddress1>${request.metadata?.remaddress1 || ''}</remaddress1>
+  <remcountry>${request.metadata?.remcountry || 'AE'}</remcountry>
+  <beneid>0</beneid>
+  <benename>${request.recipientName.split(' ')[0]}</benename>
+  <benemname>${request.recipientName.split(' ')[1] || ''}</benemname>
+  <benelname>${request.recipientName.split(' ').slice(2).join(' ') || ''}</benelname>
+  <beneaccountno>${request.recipientAccount}</beneaccountno>
+  <benetel>${request.recipientPhone || ''}</benetel>
+  <branchcode>${request.recipientBankCode || ''}</branchcode>
+  <benebeftncode>${request.metadata?.benebeftncode || ''}</benebeftncode>
+  <beneaddress>${request.metadata?.beneaddress || 'Bangladesh'}</beneaddress>
+  <benecountry>BD</benecountry>
+  <signaturevalue>${request.metadata?.signaturevalue || ''}</signaturevalue>
+  <counttr>0</counttr>
+  <transtatus>2</transtatus>
+</Transaction>`;
+
+      const res = await this.api.post('/AlRajhi', xmlPayload, {
+        headers: {
+          'username': this.config.credentials.username,
+          'password': this.config.credentials.expassword,
+        },
+      });
+
+      const responseCode = this.extractXmlValue(res.data, 'ResponseCode');
+      const responseDesc = this.extractXmlValue(res.data, 'Responsedescription');
+
+      return {
+        success: responseCode === '200',
+        providerTransactionId: request.reference,
+        status: responseCode === '200' ? 'initiated' : 'failed',
+        message: responseDesc,
+        rawResponse: res.data,
+      };
+    } catch (err) {
+      this.logger.error(`Agrani Bank payout failed: ${err.message}`);
+      return { success: false, status: 'failed', message: err.message };
+    }
+  }
+
+  async checkStatus(providerTransactionId: string): Promise<PayoutResponse> {
+    try {
+      const res = await this.api.get(`/getxmltraninfobyid/${providerTransactionId}`, {
+        headers: {
+          'Username': this.config.credentials.username,
+          'Expassword': this.config.credentials.expassword,
+        },
+      });
+
+      const responseCode = this.extractXmlValue(res.data, 'ResponseCode');
+      const trnStatus = this.extractXmlValue(res.data, 'trnStatus');
+
+      return {
+        success: responseCode === '200',
+        providerTransactionId,
+        status: trnStatus === 'Paid' ? 'completed' : 'pending',
+        message: this.extractXmlValue(res.data, 'Responsedescription'),
+        rawResponse: res.data,
+      };
+    } catch (err) {
+      return { success: false, status: 'failed', message: err.message };
+    }
+  }
+
+  private extractXmlValue(xml: string, tag: string): string {
+    const match = xml.match(new RegExp(`<${tag}>(.*?)</${tag}>`, 'i'));
+    return match ? match[1] : '';
+  }
+
+  async validateCredentials(): Promise<boolean> {
+    try {
+      const res = await this.api.post('/t24validation', '<?xml version="1.0" encoding="UTF-8"?><Transaction><beneaccountno>0200014001577</beneaccountno></Transaction>');
+      return this.extractXmlValue(res.data, 'ResponseCode') === '200';
+    } catch {
+      return false;
+    }
+  }
+}
+
+// ============================================
+// BRAC BANK PROVIDER (Bangladesh - OAuth2 + JWE)
+// ============================================
+@Injectable()
+export class BracBankProvider extends PayoutProvider {
+  protected readonly providerCode = 'brac_bank';
+  private api: AxiosInstance;
+  private config: ProviderConfig;
+  private bearerToken: string;
+
+  async initialize(config: ProviderConfig): Promise<void> {
+    this.config = config;
+    this.api = axios.create({
+      baseURL: config.baseUrl,
+      timeout: 30000,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  private async getToken(): Promise<string> {
+    if (this.bearerToken) return this.bearerToken;
+
+    const { basicAuthHeader } = this.config.credentials;
+    const res = await this.api.post('/oauth/Token', {}, {
+      headers: {
+        'Authorization': basicAuthHeader || 'Basic U1BfVzpBYmNkMTIzNDU2Ny4=',
+        'Content-Type': 'application/json',
+      },
+    });
+    this.bearerToken = res.data.Data?.Token;
+    return this.bearerToken;
+  }
+
+  async sendPayout(request: PayoutRequest): Promise<PayoutResponse> {
+    try {
+      const token = await this.getToken();
+
+      const payload = {
+        TTReferenceNo: request.reference,
+        BeneficiaryName: request.recipientName,
+        BeneficiaryPhoneNo: request.recipientPhone || '',
+        BeneficiaryIdentityType: request.metadata?.beneficiaryIdType || 'CCPT',
+        BeneficiaryIdentityNumber: request.metadata?.beneficiaryIdNumber || '',
+        BeneficiaryFather: request.metadata?.beneficiaryFather || '',
+        BeneficiaryMother: request.metadata?.beneficiaryMother || '',
+        BeneficiaryDob: request.metadata?.beneficiaryDob || '',
+        BeneficiaryAddress: request.metadata?.beneficiaryAddress || '',
+        BeneficiaryRelation: request.metadata?.beneficiaryRelation || 'PARE',
+        BeneficiaryAccountNo: request.recipientAccount,
+        DistrictISOCode: request.metadata?.districtIsoCode || '',
+        ThanaCode: request.metadata?.thanaCode || '',
+        TTAmount: request.amount,
+        SenderName: request.metadata?.senderName || 'Sender',
+        SenderAddress: request.metadata?.senderAddress || '',
+        SenderCountryCode: request.metadata?.senderCountryCode || 'USA',
+        ModeOfPayment: request.metadata?.modeOfPayment || '01',
+        SenderCurrencyCode: request.metadata?.senderCurrencyCode || 'USD',
+        SenderDocumentType: request.metadata?.senderDocumentType || 'CCPT',
+        SenderDocumentNumber: request.metadata?.senderDocumentNumber || '',
+        SenderMsisdn: request.metadata?.senderMsisdn || '',
+        SenderNationality: request.metadata?.senderNationality || 'BGD',
+        SenderDob: request.metadata?.senderDob || '',
+        RoutingNo: request.recipientBankCode || '',
+        Purpose: request.purpose || 'FAMI',
+        BeneficiaryCountry: request.metadata?.beneficiaryCountry || 'BGD',
+        BeneficiaryCurrency: request.currency,
+        WalletPartner: request.metadata?.walletPartner || '',
+        SourceOfFunds: request.metadata?.sourceOfFunds || 'EMIN',
+        SenderGender: request.metadata?.senderGender || 'M',
+        BeneficiaryGender: request.metadata?.beneficiaryGender || 'M',
+        SenderConversionRate: request.metadata?.conversionRate || '',
+        SenderAmount: request.metadata?.senderAmount || '',
+      };
+
+      const res = await this.api.post('/Transaction/postTransaction', payload, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'text/plain',
+        },
+      });
+
+      return {
+        success: res.data.Success === true || res.data.StatusCode === '801',
+        providerTransactionId: request.reference,
+        status: res.data.Success ? 'initiated' : 'failed',
+        message: res.data.StatusDescription || 'Transaction submitted',
+        rawResponse: res.data,
+      };
+    } catch (err) {
+      this.logger.error(`Brac Bank payout failed: ${err.message}`);
+      return { success: false, status: 'failed', message: err.message };
+    }
+  }
+
+  async checkStatus(providerTransactionId: string): Promise<PayoutResponse> {
+    try {
+      const token = await this.getToken();
+      const res = await this.api.post('/Transaction/queryTransaction', {
+        TTReferenceNo: providerTransactionId,
+      }, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      return {
+        success: true,
+        providerTransactionId,
+        status: res.data.TransactionStatus === 'COMPLETED' ? 'completed' : 'pending',
+        message: res.data.StatusDescription,
+        rawResponse: res.data,
+      };
+    } catch (err) {
+      return { success: false, status: 'failed', message: err.message };
+    }
+  }
+
+  async validateCredentials(): Promise<boolean> {
+    try {
+      await this.getToken();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
+
+// ============================================
+// PRIME BANK PROVIDER (Bangladesh - Token + AES)
+// ============================================
+@Injectable()
+export class PrimeBankProvider extends PayoutProvider {
+  protected readonly providerCode = 'prime_bank';
+  private api: AxiosInstance;
+  private config: ProviderConfig;
+  private authToken: string;
+
+  async initialize(config: ProviderConfig): Promise<void> {
+    this.config = config;
+    this.api = axios.create({
+      baseURL: config.baseUrl,
+      timeout: 30000,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  private async getToken(): Promise<string> {
+    if (this.authToken) return this.authToken;
+
+    const { corporateId, userId, password, enckey } = this.config.credentials;
+    const res = await this.api.post('/getToken', {
+      UserId: userId,
+      CorporateId: corporateId,
+      Password: password,
+    }, {
+      headers: { enckey },
+    });
+    this.authToken = res.data.Token;
+    return this.authToken;
+  }
+
+  async sendPayout(request: PayoutRequest): Promise<PayoutResponse> {
+    try {
+      const token = await this.getToken();
+      const { corporateId, userId, enckey } = this.config.credentials;
+
+      const payload = {
+        CorporateId: corporateId,
+        UserId: userId,
+        Transaction: [{
+          BeneficiaryDetails: {
+            BeneficiaryName: request.recipientName,
+            BeneficiaryAddress: request.metadata?.beneficiaryAddress || '',
+            BeneficiaryCountry: 'BD',
+          },
+          RemitterDetails: {
+            RemitterName: request.metadata?.senderName || 'Sender',
+            RemitterAddress: request.metadata?.senderAddress || '',
+            RemitterCountry: request.metadata?.senderCountry || 'SG',
+            RemitterOccupation: request.metadata?.senderOccupation || '',
+            RemitterDob: request.metadata?.senderDob || '',
+            RemitterIDType: request.metadata?.senderIdType || 'Citizen',
+            RemitterIDNo: request.metadata?.senderIdNo || '',
+          },
+          TransactionDetails: {
+            TransactionReferenceNo: request.reference,
+            TransferAmount: request.amount.toString(),
+            Currency: request.currency,
+            MandateType: request.metadata?.mandateType || 'BEFTN',
+            BeneficiaryAccountNo: request.recipientAccount,
+            BankName: request.recipientBankName || '',
+            BankBranch: request.metadata?.bankBranch || '',
+            RoutingNumber: request.recipientBankCode || '',
+            TwoPercentageConsent: request.metadata?.twoPercentConsent || 'Y',
+            PurposeCode: request.metadata?.purposeCode || '',
+            TransactionDate: new Date().toLocaleDateString('en-GB'),
+          },
+        }],
+      };
+
+      const res = await this.api.post('/sendTransaction', payload, {
+        headers: { enckey, token },
+      });
+
+      return {
+        success: res.data.ResponseCode === '200' || res.data.status === 'success',
+        providerTransactionId: request.reference,
+        status: 'initiated',
+        message: res.data.ResponseMessage || 'Transaction submitted',
+        rawResponse: res.data,
+      };
+    } catch (err) {
+      this.logger.error(`Prime Bank payout failed: ${err.message}`);
+      return { success: false, status: 'failed', message: err.message };
+    }
+  }
+
+  async checkStatus(providerTransactionId: string): Promise<PayoutResponse> {
+    try {
+      const token = await this.getToken();
+      const res = await this.api.post('/transactionStatus', {
+        CorporateId: this.config.credentials.corporateId,
+        UserId: this.config.credentials.userId,
+        TransactionReferenceNo: providerTransactionId,
+      }, {
+        headers: { token, enckey: this.config.credentials.enckey },
+      });
+
+      return {
+        success: true,
+        providerTransactionId,
+        status: res.data.Status === 'COMPLETED' ? 'completed' : 'pending',
+        message: res.data.StatusMessage,
+        rawResponse: res.data,
+      };
+    } catch (err) {
+      return { success: false, status: 'failed', message: err.message };
+    }
+  }
+
+  async validateCredentials(): Promise<boolean> {
+    try {
+      await this.getToken();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
+
+// ============================================
+// STANDARD BANK PROVIDER (Bangladesh - SOAP + Salted Hash)
+// ============================================
+@Injectable()
+export class StandardBankProvider extends PayoutProvider {
+  protected readonly providerCode = 'standard_bank';
+  private api: AxiosInstance;
+  private config: ProviderConfig;
+
+  async initialize(config: ProviderConfig): Promise<void> {
+    this.config = config;
+    this.api = axios.create({
+      baseURL: config.baseUrl,
+      timeout: 30000,
+      headers: {
+        'Content-Type': 'text/xml; charset=utf-8',
+      },
+    });
+  }
+
+  private generateSaltedValue(txnNo: string, amount: string, accountNo: string): string {
+    const { apiSalt } = this.config.credentials;
+    const raw = `${txnNo}${amount}${apiSalt}${accountNo}`;
+    return Buffer.from(raw).toString('base64');
+  }
+
+  private buildSoapRequest(action: string, entries: string): string {
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:con="http://controller.ws4Rms.pro.com/">
+  <soapenv:Header/>
+  <soapenv:Body>
+    <con:${action}>
+      <wsParam>
+        <apiUser>${this.config.credentials.apiUser}</apiUser>
+        <apiKey>${this.config.credentials.apiKey}</apiKey>
+        <apiPass>${this.config.credentials.apiPass}</apiPass>
+        <productCode>${this.config.credentials.productCode}</productCode>
+        <paramArray>
+          ${entries}
+        </paramArray>
+      </wsParam>
+    </con:${action}>
+  </soapenv:Body>
+</soapenv:Envelope>`;
+  }
+
+  async sendPayout(request: PayoutRequest): Promise<PayoutResponse> {
+    try {
+      const saltedValue = this.generateSaltedValue(
+        request.reference,
+        request.amount.toFixed(1),
+        request.recipientAccount
+      );
+
+      const entries = `
+<entry><key>txnNo</key><value>${request.reference}</value></entry>
+<entry><key>amountToPay</key><value>${request.amount.toFixed(1)}</value></entry>
+<entry><key>currency</key><value>${request.currency}</value></entry>
+<entry><key>saltedValue</key><value>${saltedValue}</value></entry>
+<entry><key>sendingPurpose</key><value>${request.purpose || 'Family Maintenance'}</value></entry>
+<entry><key>senderFullName</key><value>${request.metadata?.senderName || 'Sender'}</value></entry>
+<entry><key>senderContactNo</key><value>${request.metadata?.senderPhone || ''}</value></entry>
+<entry><key>senderOccupationName</key><value>${request.metadata?.senderOccupation || 'Engineer'}</value></entry>
+<entry><key>senderIncomeSourceName</key><value>${request.metadata?.senderIncomeSource || 'Salary'}</value></entry>
+<entry><key>receiverFullName</key><value>${request.recipientName}</value></entry>
+<entry><key>receiverContactNo</key><value>${request.recipientPhone || ''}</value></entry>
+<entry><key>paymentMode</key><value>${request.metadata?.paymentMode || 'BANK'}</value></entry>
+<entry><key>bankName</key><value>${request.recipientBankName || ''}</value></entry>
+<entry><key>brnName</key><value>${request.metadata?.branchName || ''}</value></entry>
+<entry><key>routingNo</key><value>${request.recipientBankCode || ''}</value></entry>
+<entry><key>bankAccountNo</key><value>${request.recipientAccount}</value></entry>
+<entry><key>sendCountryCode</key><value>${request.metadata?.senderCountry || 'PK'}</value></entry>
+<entry><key>sendCountryName</key><value>${request.metadata?.senderCountryName || ''}</value></entry>`;
+
+      const soapBody = this.buildSoapRequest('submitRemitInfo', entries);
+
+      const res = await this.api.post('', soapBody, {
+        headers: { SOAPAction: '' },
+      });
+
+      const rtnFlag = this.extractXmlValue(res.data, 'rtnFlag');
+      const rtnMsg = this.extractXmlValue(res.data, 'rtnMsg');
+
+      return {
+        success: rtnFlag === 'Success',
+        providerTransactionId: request.reference,
+        status: rtnFlag === 'Success' ? 'initiated' : 'failed',
+        message: rtnMsg,
+        rawResponse: res.data,
+      };
+    } catch (err) {
+      this.logger.error(`Standard Bank payout failed: ${err.message}`);
+      return { success: false, status: 'failed', message: err.message };
+    }
+  }
+
+  async checkStatus(providerTransactionId: string): Promise<PayoutResponse> {
+    try {
+      const entries = `<entry><key>txnNo</key><value>${providerTransactionId}</value></entry>`;
+      const soapBody = this.buildSoapRequest('queryRemitInfo', entries);
+
+      const res = await this.api.post('', soapBody, {
+        headers: { SOAPAction: '' },
+      });
+
+      const rtnFlag = this.extractXmlValue(res.data, 'rtnFlag');
+      const trnStatus = this.extractXmlValue(res.data, 'trnStatus');
+
+      return {
+        success: rtnFlag === 'Success',
+        providerTransactionId,
+        status: trnStatus === 'Paid' ? 'completed' : 'pending',
+        message: this.extractXmlValue(res.data, 'rtnMsg'),
+        rawResponse: res.data,
+      };
+    } catch (err) {
+      return { success: false, status: 'failed', message: err.message };
+    }
+  }
+
+  private extractXmlValue(xml: string, tag: string): string {
+    const match = xml.match(new RegExp(`<${tag}>(.*?)</${tag}>`, 'i'));
+    return match ? match[1] : '';
+  }
+
+  async validateCredentials(): Promise<boolean> {
+    try {
+      const entries = `<entry><key>txnNo</key><value>test</value></entry>`;
+      const soapBody = this.buildSoapRequest('queryRemitInfo', entries);
+      const res = await this.api.post('', soapBody);
+      return this.extractXmlValue(res.data, 'rtnFlag') !== '';
+    } catch {
+      return false;
+    }
+  }
+}
+
+// ============================================
+// UCB PROVIDER (Bangladesh - Session + DLL Encryption)
+// ============================================
+@Injectable()
+export class UcbProvider extends PayoutProvider {
+  protected readonly providerCode = 'ucb';
+  private api: AxiosInstance;
+  private config: ProviderConfig;
+  private sessionId: string;
+
+  async initialize(config: ProviderConfig): Promise<void> {
+    this.config = config;
+    this.api = axios.create({
+      baseURL: config.baseUrl,
+      timeout: 30000,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  private async authenticate(): Promise<string> {
+    if (this.sessionId) return this.sessionId;
+
+    const { userId, password } = this.config.credentials;
+    const res = await this.api.post('/URemitJSONAuthentication?QueryType=2', {
+      UserID: userId,
+      Password: password,
+    });
+    this.sessionId = res.data.SessionID;
+    return this.sessionId;
+  }
+
+  async sendPayout(request: PayoutRequest): Promise<PayoutResponse> {
+    try {
+      const sessionId = await this.authenticate();
+      const { transactionPassword } = this.config.credentials;
+      const modeOfPayment = request.metadata?.modeOfPayment || '001';
+
+      const payload: any = {
+        SessionID: sessionId,
+        TransactionPassword: transactionPassword,
+        TransactionReferenceID: request.reference,
+        SenderName: request.metadata?.senderName || 'Sender',
+        SenderAddress: request.metadata?.senderAddress || '',
+        SenderMobileNo: request.metadata?.senderPhone || '',
+        SenderCountryCode: request.metadata?.senderCountryCode || 'BGD',
+        BeneficiaryName: request.recipientName,
+        BeneficiaryAddress: request.metadata?.beneficiaryAddress || 'Bangladesh',
+        BeneficiaryMobileNo: request.recipientPhone || '',
+        BeneficiaryIdentityType: request.metadata?.beneficiaryIdType || 'PP',
+        BeneficiaryIdentityInfo: request.metadata?.beneficiaryIdInfo || '',
+        TransactionAmount: request.amount.toFixed(2),
+        ModeOfPayment: modeOfPayment,
+        UserID: this.config.credentials.userId,
+        FreeText: request.purpose || 'UCB Trans',
+        SenderPassportNo: request.metadata?.senderPassportNo || '',
+        SenderOtherIDType: request.metadata?.senderOtherIdType || '',
+        SenderOtherIDNo: request.metadata?.senderOtherIdNo || '',
+        SourceForeignCCY: request.metadata?.sourceCurrency || 'USD',
+        ConversionRate: request.metadata?.conversionRate || '1.0',
+        RemmitedAmount: request.metadata?.remittedAmount || request.amount.toString(),
+        NationalityOfRemmiter: request.metadata?.senderNationality || 'UAE',
+      };
+
+      if (modeOfPayment === '001' || modeOfPayment === '006' || modeOfPayment === '007') {
+        payload.BeneficiaryAccountNo = request.recipientAccount;
+      }
+      if (modeOfPayment === '006') {
+        payload.BeneficiaryRoutingNo = request.recipientBankCode || '';
+      }
+
+      const res = await this.api.post('/InitiateJSONURemitTransaction?QueryType=2', payload);
+
+      return {
+        success: res.data.StatusCode === '0000',
+        providerTransactionId: request.reference,
+        status: res.data.StatusCode === '0000' ? 'initiated' : 'failed',
+        message: res.data.StatusCode === '0000' ? 'Transaction initiated' : res.data.StatusMessage,
+        rawResponse: res.data,
+      };
+    } catch (err) {
+      this.logger.error(`UCB payout failed: ${err.message}`);
+      return { success: false, status: 'failed', message: err.message };
+    }
+  }
+
+  async checkStatus(providerTransactionId: string): Promise<PayoutResponse> {
+    try {
+      const res = await this.api.post('/QueryJSONTransactionPost', {
+        TransactionReferenceID: providerTransactionId,
+        PostedDate: '',
+        UserID: this.config.credentials.userId,
+      });
+
+      const data = Array.isArray(res.data) ? res.data[0] : res.data;
+      return {
+        success: data?.RequestStatus === '7011',
+        providerTransactionId,
+        status: data?.TransactionStatus === '0100' ? 'completed' : 'pending',
+        message: data?.RequestStatus === '7011' ? 'Query successful' : 'Query failed',
+        rawResponse: res.data,
+      };
+    } catch (err) {
+      return { success: false, status: 'failed', message: err.message };
+    }
+  }
+
+  async validateCredentials(): Promise<boolean> {
+    try {
+      await this.authenticate();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
+
+// ============================================
+// DHAKA BANK PROVIDER (Bangladesh - OAuth2 JWT)
+// ============================================
+@Injectable()
+export class DhakaBankProvider extends PayoutProvider {
+  protected readonly providerCode = 'dhaka_bank';
+  private config: ProviderConfig;
+  private publicApi: AxiosInstance;
+  private secureApi: AxiosInstance;
+  private accessToken: string;
+  private tokenExpiry: Date;
+
+  async initialize(config: ProviderConfig): Promise<void> {
+    this.config = config;
+    this.publicApi = axios.create({
+      baseURL: config.credentials.publicBaseUrl || config.baseUrl,
+      timeout: 30000,
+      headers: { 'Content-Type': 'application/json' },
+    });
+    this.secureApi = axios.create({
+      baseURL: config.credentials.secureBaseUrl || config.baseUrl,
+      timeout: 30000,
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    this.secureApi.interceptors.request.use(async (cfg) => {
+      if (!this.accessToken || new Date() > this.tokenExpiry) {
+        await this.refreshToken();
+      }
+      cfg.headers['Authorization'] = `Bearer ${this.accessToken}`;
+      return cfg;
+    });
+  }
+
+  private async refreshToken(): Promise<void> {
+    const { username, password } = this.config.credentials;
+    const res = await this.publicApi.post('/get-access-token', { username, password });
+    this.accessToken = res.data.accessToken;
+    this.tokenExpiry = new Date(res.data.expireOn);
+  }
+
+  async sendPayout(request: PayoutRequest): Promise<PayoutResponse> {
+    try {
+      const now = new Date();
+      now.setMinutes(now.getMinutes() + 1, 0, 0);
+      const reqDateTime = now.toISOString().replace('T', ' ').substring(0, 19);
+
+      const payload = {
+        refNo: request.reference,
+        beneficiaryName: request.recipientName,
+        beneficiaryPhone: request.recipientPhone || '',
+        beneficiaryAdress: request.metadata?.beneficiaryAddress || '',
+        beneficiaryRelation: request.metadata?.beneficiaryRelation || '',
+        beneficiaryAccountNo: request.recipientAccount,
+        beneficiaryBank: request.recipientBankName || '',
+        beneficiaryBranch: request.metadata?.beneficiaryBranch || '',
+        beneficiaryGender: request.metadata?.beneficiaryGender || 'M',
+        branchCode: request.recipientBankCode || '',
+        paymentDate: new Date().toISOString().split('T')[0],
+        amount: request.amount,
+        purpose: request.purpose || 'Family Maintenance',
+        currencyCode: request.currency,
+        description: request.metadata?.description || 'Remittance',
+        senderName: request.metadata?.senderName || 'Sender',
+        senderAddress: request.metadata?.senderAddress || '',
+        senderGender: request.metadata?.senderGender || 'M',
+        senderNationality: request.metadata?.senderNationality || 'Bangladeshi',
+        originCountry: request.metadata?.originCountry || 'United Kingdom',
+        transactionDate: new Date().toISOString().split('T')[0],
+        beneficiaryBranchRouting: request.metadata?.beneficiaryBranchRouting || '',
+        foreignCurrencyAmount: request.metadata?.foreignCurrencyAmount || 0,
+        reqDateTime,
+        convRate: request.metadata?.convRate || '1.0',
+        extraParams: request.metadata?.extraParams || {},
+      };
+
+      const res = await this.secureApi.post('/send-remittance', payload);
+
+      return {
+        success: res.data.status === '0000',
+        providerTransactionId: res.data.uniqueId,
+        status: res.data.remittanceStatus === 'RECEIVED' ? 'initiated' : 'failed',
+        message: res.data.msg || 'Remittance submitted',
+        rawResponse: res.data,
+      };
+    } catch (err) {
+      this.logger.error(`Dhaka Bank payout failed: ${err.message}`);
+      return { success: false, status: 'failed', message: err.message };
+    }
+  }
+
+  async checkStatus(providerTransactionId: string): Promise<PayoutResponse> {
+    try {
+      const res = await this.secureApi.post('/get-remittance-bulk-status', [
+        { refNo: providerTransactionId },
+        { refNo: `${providerTransactionId}_dummy` },
+      ]);
+
+      const list = res.data.remittanceStatusList || [];
+      const tx = list.find((t: any) => t.refNo === providerTransactionId);
+
+      if (!tx) {
+        return { success: false, status: 'failed', message: 'Transaction not found in bulk response' };
+      }
+
+      return {
+        success: true,
+        providerTransactionId,
+        status: tx.remittanceStatus === 'SUCCESS' ? 'completed' : tx.remittanceStatus === 'FAILED' ? 'failed' : 'pending',
+        message: tx.apiMsg || tx.remittanceStatus,
+        rawResponse: res.data,
+      };
+    } catch (err) {
+      return { success: false, status: 'failed', message: err.message };
+    }
+  }
+
+  async validateCredentials(): Promise<boolean> {
+    try {
+      await this.refreshToken();
       return true;
     } catch {
       return false;
