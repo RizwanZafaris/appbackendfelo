@@ -18,6 +18,9 @@ import { LedgerModule } from '@/modules/ledger/ledger.module';
 import { DisbursementModule } from '@/modules/disbursement/disbursement.module';
 import { RemittanceModule } from '@/modules/remittance/remittance.module';
 import { SmsModule } from '@/modules/sms/sms.module';
+import { KybModule } from '@/modules/kyb/kyb.module';
+import { TmsModule } from '@/modules/tms/tms.module';
+import { ComplianceConfigModule } from '@/modules/compliance-config/compliance-config.module';
 import { RequestIdInterceptor } from '@/common/interceptors/request-id.interceptor';
 import { LoggingInterceptor } from '@/common/interceptors/logging.interceptor';
 import { configFactory } from '@/config/config';
@@ -42,6 +45,9 @@ import { configFactory } from '@/config/config';
     AuthModule,
     UsersModule,
     KycModule,
+    KybModule,
+    TmsModule,
+    ComplianceConfigModule,
     WalletModule,
     TreasuryModule,
     LedgerModule,

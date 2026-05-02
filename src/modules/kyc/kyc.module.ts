@@ -1,11 +1,11 @@
 import { Module } from '@nestjs/common';
-
-import { KycController } from './kyc.controller';
 import { KycService } from './kyc.service';
+import { KycController } from './kyc.controller';
+import { AdminKycController } from './admin-kyc.controller';
 
 @Module({
-  controllers: [KycController],
   providers: [KycService],
+  controllers: [KycController, AdminKycController],
   exports: [KycService],
 })
 export class KycModule {}

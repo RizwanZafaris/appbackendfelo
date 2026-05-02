@@ -1970,7 +1970,276 @@ export const disbursementOrders = pgTable(
   }),
 );
 
-export type TreasuryActor = typeof treasuryActors.$inferSelect;
+export const kycProfiles = pgTable(
+  'kyc_profiles',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => profiles.id, { onDelete: 'cascade' })
+      .unique(),
+    fullName: text('full_name').notNull(),
+    dob: date('dob').notNull(),
+    nationality: text('nationality').notNull(),
+    address: text('address').notNull(),
+    status: text('status', {
+      enum: ['pending', 'in_review', 'approved', 'rejected', 'needs_info'],
+    })
+      .notNull()
+      .default('pending'),
+    reviewerId: uuid('reviewer_id').references(() => profiles.id, { onDelete: 'set null' }),
+    notes: text('notes'),
+    metadata: jsonb('metadata').notNull().default({}),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    userIdx: index('idx_kyc_profile_user').on(t.userId),
+    statusIdx: index('idx_kyc_profile_status').on(t.status),
+    reviewerIdx: index('idx_kyc_profile_reviewer').on(t.reviewerId),
+  }),
+);
+
+export const kycProfileDocuments = pgTable(
+  'kyc_profile_documents',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    profileId: uuid('profile_id')
+      .notNull()
+      .references(() => kycProfiles.id, { onDelete: 'cascade' }),
+    docType: text('doc_type', {
+      enum: ['passport', 'id_card', 'proof_of_address', 'selfie', 'other'],
+    }).notNull(),
+    fileUrl: text('file_url').notNull(),
+    fileKey: text('file_key').notNull(),
+    status: text('status', {
+      enum: ['pending', 'verified', 'rejected'],
+    })
+      .notNull()
+      .default('pending'),
+    uploadedAt: timestamp('uploaded_at', { withTimezone: true }).notNull().defaultNow(),
+    verifiedAt: timestamp('verified_at', { withTimezone: true }),
+    reviewerNotes: text('reviewer_notes'),
+  },
+  (t) => ({
+    profileIdx: index('idx_kyc_profile_doc_profile').on(t.profileId),
+    typeIdx: index('idx_kyc_profile_doc_type').on(t.docType),
+    statusIdx: index('idx_kyc_profile_doc_status').on(t.status),
+  }),
+);
+
+export const kybBusinesses = pgTable(
+  'kyb_businesses',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    businessName: text('business_name').notNull(),
+    registrationNumber: text('registration_number').notNull(),
+    country: text('country').notNull(),
+    businessType: text('business_type').notNull(),
+    tradeLicense: text('trade_license'),
+    incorporationDate: date('incorporation_date'),
+    address: text('address').notNull(),
+    website: text('website'),
+    status: text('status', {
+      enum: ['pending', 'in_review', 'approved', 'rejected', 'needs_info'],
+    })
+      .notNull()
+      .default('pending'),
+    metadata: jsonb('metadata').notNull().default({}),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    regIdx: index('idx_kyb_business_reg').on(t.registrationNumber),
+    countryIdx: index('idx_kyb_business_country').on(t.country),
+    statusIdx: index('idx_kyb_business_status').on(t.status),
+  }),
+);
+
+export const kybUbos = pgTable(
+  'kyb_ubos',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    businessId: uuid('business_id')
+      .notNull()
+      .references(() => kybBusinesses.id, { onDelete: 'cascade' }),
+    fullName: text('full_name').notNull(),
+    dob: date('dob'),
+    nationality: text('nationality'),
+    ownershipPercentage: numeric('ownership_percentage', { precision: 5, scale: 2 }).notNull(),
+    kycProfileId: uuid('kyc_profile_id').references(() => kycProfiles.id, { onDelete: 'set null' }),
+    status: text('status', {
+      enum: ['pending', 'verified', 'rejected'],
+    })
+      .notNull()
+      .default('pending'),
+  },
+  (t) => ({
+    businessIdx: index('idx_kyb_ubo_business').on(t.businessId),
+    kycIdx: index('idx_kyb_ubo_kyc').on(t.kycProfileId),
+  }),
+);
+
+export const kybBusinessDocuments = pgTable(
+  'kyb_business_documents',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    businessId: uuid('business_id')
+      .notNull()
+      .references(() => kybBusinesses.id, { onDelete: 'cascade' }),
+    docType: text('doc_type', {
+      enum: ['trade_license', 'certificate_of_incorporation', 'bank_statement', 'financial_statement', 'other'],
+    }).notNull(),
+    fileUrl: text('file_url').notNull(),
+    fileKey: text('file_key').notNull(),
+    status: text('status', {
+      enum: ['pending', 'verified', 'rejected'],
+    })
+      .notNull()
+      .default('pending'),
+  },
+  (t) => ({
+    businessIdx: index('idx_kyb_business_doc_business').on(t.businessId),
+    typeIdx: index('idx_kyb_business_doc_type').on(t.docType),
+  }),
+);
+
+export const tmsRules = pgTable(
+  'tms_rules',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    name: text('name').notNull(),
+    type: text('type', {
+      enum: ['velocity', 'threshold', 'pattern', 'geographic', 'new_user', 'sanctions'],
+    }).notNull(),
+    config: jsonb('config').notNull(),
+    isActive: boolean('is_active').notNull().default(true),
+    priority: integer('priority').notNull().default(0),
+    createdBy: uuid('created_by').references(() => profiles.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    typeIdx: index('idx_tms_rule_type').on(t.type),
+    activeIdx: index('idx_tms_rule_active').on(t.isActive),
+  }),
+);
+
+export const tmsAlerts = pgTable(
+  'tms_alerts',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    ruleId: uuid('rule_id')
+      .notNull()
+      .references(() => tmsRules.id, { onDelete: 'cascade' }),
+    transactionId: uuid('transaction_id').notNull(),
+    userId: uuid('user_id').references(() => profiles.id, { onDelete: 'set null' }),
+    riskScore: integer('risk_score').notNull().default(0),
+    status: text('status', {
+      enum: ['open', 'under_review', 'confirmed', 'false_positive'],
+    })
+      .notNull()
+      .default('open'),
+    assignedTo: uuid('assigned_to').references(() => profiles.id, { onDelete: 'set null' }),
+    notes: text('notes'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+  },
+  (t) => ({
+    ruleIdx: index('idx_tms_alert_rule').on(t.ruleId),
+    txnIdx: index('idx_tms_alert_txn').on(t.transactionId),
+    userIdx: index('idx_tms_alert_user').on(t.userId),
+    statusIdx: index('idx_tms_alert_status').on(t.status),
+  }),
+);
+
+export const tmsCases = pgTable(
+  'tms_cases',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    caseNumber: text('case_number').notNull().unique(),
+    status: text('status', {
+      enum: ['open', 'in_progress', 'closed'],
+    })
+      .notNull()
+      .default('open'),
+    priority: text('priority', {
+      enum: ['low', 'medium', 'high', 'critical'],
+    })
+      .notNull()
+      .default('medium'),
+    assignedTo: uuid('assigned_to').references(() => profiles.id, { onDelete: 'set null' }),
+    notes: text('notes'),
+    linkedAlertIds: jsonb('linked_alert_ids').notNull().default([]),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    closedAt: timestamp('closed_at', { withTimezone: true }),
+  },
+  (t) => ({
+    numberIdx: index('idx_tms_case_number').on(t.caseNumber),
+    statusIdx: index('idx_tms_case_status').on(t.status),
+    assignedIdx: index('idx_tms_case_assigned').on(t.assignedTo),
+  }),
+);
+
+export const tmsSanctions = pgTable(
+  'tms_sanctions',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    name: text('name').notNull(),
+    listType: text('list_type', {
+      enum: ['ofac', 'un', 'eu', 'hmt'],
+    }).notNull(),
+    entityName: text('entity_name').notNull(),
+    aliases: jsonb('aliases').notNull().default([]),
+    program: text('program'),
+    riskLevel: text('risk_level', {
+      enum: ['low', 'medium', 'high', 'critical'],
+    }).notNull().default('medium'),
+    lastUpdated: timestamp('last_updated', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    listIdx: index('idx_tms_sanction_list').on(t.listType),
+    entityIdx: index('idx_tms_sanction_entity').on(t.entityName),
+  }),
+);
+
+export const complianceConfig = pgTable(
+  'compliance_config',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    section: text('section', {
+      enum: ['kyc', 'kyb', 'tms'],
+    }).notNull(),
+    config: jsonb('config').notNull(),
+    updatedBy: uuid('updated_by').references(() => profiles.id, { onDelete: 'set null' }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    sectionIdx: uniqueIndex('idx_compliance_config_section').on(t.section),
+  }),
+);
+
+export type KycProfile = typeof kycProfiles.$inferSelect;
+export type NewKycProfile = typeof kycProfiles.$inferInsert;
+export type KycProfileDocument = typeof kycProfileDocuments.$inferSelect;
+export type NewKycProfileDocument = typeof kycProfileDocuments.$inferInsert;
+export type KybBusiness = typeof kybBusinesses.$inferSelect;
+export type NewKybBusiness = typeof kybBusinesses.$inferInsert;
+export type KybUbo = typeof kybUbos.$inferSelect;
+export type NewKybUbo = typeof kybUbos.$inferInsert;
+export type KybBusinessDocument = typeof kybBusinessDocuments.$inferSelect;
+export type NewKybBusinessDocument = typeof kybBusinessDocuments.$inferInsert;
+export type TmsRule = typeof tmsRules.$inferSelect;
+export type NewTmsRule = typeof tmsRules.$inferInsert;
+export type TmsAlert = typeof tmsAlerts.$inferSelect;
+export type NewTmsAlert = typeof tmsAlerts.$inferInsert;
+export type TmsCase = typeof tmsCases.$inferSelect;
+export type NewTmsCase = typeof tmsCases.$inferInsert;
+export type TmsSanction = typeof tmsSanctions.$inferSelect;
+export type NewTmsSanction = typeof tmsSanctions.$inferInsert;
+export type ComplianceConfigRow = typeof complianceConfig.$inferSelect;
+export type NewComplianceConfig = typeof complianceConfig.$inferInsert;
+
 export type NewTreasuryActor = typeof treasuryActors.$inferInsert;
 export type TreasuryAuditLog = typeof treasuryAuditLogs.$inferSelect;
 export type NewTreasuryAuditLog = typeof treasuryAuditLogs.$inferInsert;
