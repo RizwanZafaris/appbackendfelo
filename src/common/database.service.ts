@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 
-import { Drizzle, DRIZZLE } from './db/db.module';
+import { Drizzle, DRIZZLE } from './db/drizzle.token';
 
 /**
  * Thin facade kept for the Squad 2/3/4 modules that were authored against a

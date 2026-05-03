@@ -23,13 +23,14 @@ import { BudgetsModule } from '@/modules/budgets/budgets.module';
 import { CashEnvelopesModule } from '@/modules/cash-envelopes/cash-envelopes.module';
 import { CoachModule } from '@/modules/coach/coach.module';
 // SOFT-LAUNCH v1: money-movement modules (LedgerModule, TreasuryModule,
-// FxRatesModule, RemittanceModule, StatementImportModule) are excluded from
-// the DI graph and live under _disabled_money_modules/ until MSB licensing
-// + provider corridor agreements are in place. ComplianceModule + ReceiptOcr
-// are kept (compliance for AML record-keeping; receipt OCR with mocked
-// adapter for capture). To re-enable money flow, restore the imports below
-// and move the directories back. See LAUNCH_FLAGS.md.
-import { ComplianceModule } from '@/modules/compliance/compliance.module';
+// FxRatesModule, RemittanceModule, StatementImportModule) are excluded
+// from the DI graph and live under _disabled_money_modules/ until MSB
+// licensing + provider corridor agreements are in place. ComplianceModule
+// is also disabled because its SanctionsService refuses to boot in prod
+// without a real vendor key — sanctions are not on the active path while
+// there is no money movement. ReceiptOcrModule is kept (mocked adapter).
+// To re-enable money flow + compliance, restore the imports + add a real
+// SANCTIONS_PROVIDER + SANCTIONS_API_KEY env. See LAUNCH_FLAGS.md.
 import { ExportModule } from '@/modules/export/export.module';
 import { FamilyModule } from '@/modules/family/family.module';
 import { FeloScoresModule } from '@/modules/felo-scores/felo-scores.module';
@@ -151,8 +152,8 @@ const REDACT_PATHS = [
     // once MSB licensing + provider corridor agreements land.
     RemittanceNotebookModule,
 
-    // Compliance & ops
-    ComplianceModule,
+    // Compliance disabled in soft-launch (no money movement → no AML);
+    // re-enable alongside money modules.
     AdminModule,
 
     // Capture — StatementImportModule disabled until live remittance returns.

@@ -1,12 +1,15 @@
 import { Global, Module, Provider } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
+import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 
 import * as schema from '@db/schema';
 
-export const DRIZZLE = Symbol('DRIZZLE');
-export type Drizzle = PostgresJsDatabase<typeof schema>;
+import { DatabaseService } from '../database.service';
+import { DRIZZLE } from './drizzle.token';
+
+export { DRIZZLE } from './drizzle.token';
+export type { Drizzle } from './drizzle.token';
 
 const drizzleProvider: Provider = {
   provide: DRIZZLE,
@@ -28,9 +31,12 @@ const drizzleProvider: Provider = {
   },
 };
 
+// DbModule is @Global so DRIZZLE + DatabaseService resolve in any module
+// (sanctions, launch-readiness, compliance, ledger, etc.) without each
+// having to import this module manually.
 @Global()
 @Module({
-  providers: [drizzleProvider],
-  exports: [DRIZZLE],
+  providers: [drizzleProvider, DatabaseService],
+  exports: [DRIZZLE, DatabaseService],
 })
 export class DbModule {}

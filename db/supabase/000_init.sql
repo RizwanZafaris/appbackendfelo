@@ -24,7 +24,7 @@ CREATE EXTENSION IF NOT EXISTS "citext";     -- case-insensitive text
 -- ---------- 1. Tables -------------------------------------------------
 
 -- USERS
-CREATE TABLE IF NOT EXISTS public.users (
+CREATE TABLE IF NOT EXISTS public.profiles (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   firebase_uid    TEXT UNIQUE NOT NULL,
   email           CITEXT UNIQUE NOT NULL,
@@ -38,12 +38,12 @@ CREATE TABLE IF NOT EXISTS public.users (
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   deleted_at      TIMESTAMPTZ
 );
-CREATE INDEX IF NOT EXISTS idx_users_firebase_uid ON public.users(firebase_uid);
+CREATE INDEX IF NOT EXISTS idx_users_firebase_uid ON public.profiles(firebase_uid);
 
 -- ACCOUNTS
 CREATE TABLE IF NOT EXISTS public.accounts (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id         UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  user_id         UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   provider        TEXT NOT NULL,
   display_name    TEXT,
   currency        CHAR(3) NOT NULL,
@@ -57,7 +57,7 @@ CREATE INDEX IF NOT EXISTS idx_accounts_user ON public.accounts(user_id);
 -- TRANSACTIONS
 CREATE TABLE IF NOT EXISTS public.transactions (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id           UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  user_id           UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   account_id        UUID REFERENCES public.accounts(id),
   merchant          TEXT,
   category          TEXT,
@@ -79,7 +79,7 @@ CREATE INDEX IF NOT EXISTS idx_txn_metadata     ON public.transactions USING GIN
 -- BUDGETS
 CREATE TABLE IF NOT EXISTS public.budgets (
   id                       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id                  UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  user_id                  UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   category                 TEXT NOT NULL,
   currency                 CHAR(3) NOT NULL,
   limit_minor              BIGINT NOT NULL,
@@ -96,7 +96,7 @@ CREATE INDEX IF NOT EXISTS idx_budgets_user ON public.budgets(user_id);
 -- GOALS
 CREATE TABLE IF NOT EXISTS public.goals (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id       UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  user_id       UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   name          TEXT NOT NULL,
   currency      CHAR(3) NOT NULL,
   target_minor  BIGINT NOT NULL,
@@ -111,7 +111,7 @@ CREATE INDEX IF NOT EXISTS idx_goals_user ON public.goals(user_id);
 -- FAMILY GROUPS + MEMBERS
 CREATE TABLE IF NOT EXISTS public.family_groups (
   id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  owner_user_id  UUID NOT NULL REFERENCES public.users(id),
+  owner_user_id  UUID NOT NULL REFERENCES public.profiles(id),
   name           TEXT,
   created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -119,7 +119,7 @@ CREATE TABLE IF NOT EXISTS public.family_groups (
 CREATE TABLE IF NOT EXISTS public.family_members (
   id                            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   family_id                     UUID NOT NULL REFERENCES public.family_groups(id) ON DELETE CASCADE,
-  user_id                       UUID NOT NULL REFERENCES public.users(id),
+  user_id                       UUID NOT NULL REFERENCES public.profiles(id),
   role                          TEXT NOT NULL CHECK (role IN ('admin','member','viewer')),
   can_view_shared_transactions  BOOLEAN NOT NULL DEFAULT false,
   can_edit_shared_budgets       BOOLEAN NOT NULL DEFAULT false,
@@ -144,7 +144,7 @@ CREATE INDEX IF NOT EXISTS idx_consent_subject ON public.consent_events(subject_
 -- NOTIFICATIONS
 CREATE TABLE IF NOT EXISTS public.notifications (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id     UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  user_id     UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   channel     TEXT NOT NULL CHECK (channel IN ('push','email','inapp','sms')),
   type        TEXT NOT NULL,
   title       TEXT NOT NULL,
@@ -160,7 +160,7 @@ CREATE INDEX IF NOT EXISTS idx_notifications_user_unread
 -- DEVICES (push tokens)
 CREATE TABLE IF NOT EXISTS public.devices (
   id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id      UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  user_id      UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   platform     TEXT NOT NULL CHECK (platform IN ('ios','android','web')),
   push_token   TEXT NOT NULL,
   last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -217,7 +217,7 @@ BEGIN
   -- 2. Supabase Auth path: auth.uid() -> users.firebase_uid -> users.id
   IF auth.uid() IS NOT NULL THEN
     SELECT u.id INTO resolved
-    FROM public.users u
+    FROM public.profiles u
     WHERE u.firebase_uid = auth.uid()::text
     LIMIT 1;
     RETURN resolved;
@@ -228,7 +228,7 @@ END;
 $$;
 
 -- ---------- 4. Row-Level Security ------------------------------------
-ALTER TABLE public.users           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.profiles           ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.accounts        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.transactions    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.budgets         ENABLE ROW LEVEL SECURITY;
@@ -240,7 +240,7 @@ ALTER TABLE public.notifications   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.devices         ENABLE ROW LEVEL SECURITY;
 
 -- Drop-and-recreate pattern keeps the script idempotent.
-DROP POLICY IF EXISTS users_self_rw         ON public.users;
+DROP POLICY IF EXISTS users_self_rw         ON public.profiles;
 DROP POLICY IF EXISTS accounts_owner_rw     ON public.accounts;
 DROP POLICY IF EXISTS transactions_owner_rw ON public.transactions;
 DROP POLICY IF EXISTS budgets_owner_rw      ON public.budgets;
@@ -252,7 +252,7 @@ DROP POLICY IF EXISTS notifications_owner   ON public.notifications;
 DROP POLICY IF EXISTS devices_owner         ON public.devices;
 
 -- Users can read and update their own row only.
-CREATE POLICY users_self_rw ON public.users
+CREATE POLICY users_self_rw ON public.profiles
   FOR ALL
   USING (id = public.current_user_id())
   WITH CHECK (id = public.current_user_id());
