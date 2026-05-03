@@ -103,5 +103,8 @@
     ],
     "coverageDirectory": "coverage",
     "testEnvironment": "node"
+  },
+  "overrides": {
+    "@scure/base": "1.2.4"
   }
 }
